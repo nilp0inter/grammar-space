@@ -2,3 +2,9 @@ node_modules/
 elm-stuff/
 dist/
 result
+
+
+### Created by https://www.gitignore.io
+### direnv ###
+.direnv
+.envrc
