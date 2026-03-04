@@ -1,0 +1,38 @@
+version: "3"
+
+tasks:
+  install:
+    desc: Install all dependencies (npm + elm)
+    cmds:
+      - npm install
+      - yes | elm init || true
+      - yes | elm install mdgriffith/elm-animator
+      - yes | elm install elm/browser
+      - yes | elm install elm/html
+      - yes | elm install elm/time
+      - yes | elm install avh4/elm-color
+
+  dev:
+    desc: Start Vite dev server
+    cmds:
+      - npx vite
+
+  build:
+    desc: Build for production
+    cmds:
+      - npx vite build
+
+  test:
+    desc: Run Elm tests
+    cmds:
+      - elm-test
+
+  format:
+    desc: Format Elm source files
+    cmds:
+      - elm-format src/ --yes
+
+  clean:
+    desc: Remove build artifacts and dependencies
+    cmds:
+      - rm -rf node_modules/ elm-stuff/ dist/
