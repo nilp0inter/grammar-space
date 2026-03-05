@@ -4,6 +4,12 @@ import Array exposing (Array)
 import Grammar.Types exposing (VerbTense)
 
 
+type ExerciseInputMode
+    = WriteOwnMode
+    | GenerateStoryMode
+    | SavedStoriesMode
+
+
 type ExercisePhase
     = Answering
     | ShowingFeedback

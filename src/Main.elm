@@ -2,9 +2,10 @@ port module Main exposing (main)
 
 import Animator
 import Animator.Inline
+import Api
 import Array
 import Browser
-import Exercise.Types exposing (ExerciseItem, ExercisePhase(..), ExerciseState, advanceToNext, currentItem, initExercise, recordAnswer)
+import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExercisePhase(..), ExerciseState, advanceToNext, currentItem, initExercise, recordAnswer)
 import Exercise.View exposing (viewExercise)
 import Grammar.Engine exposing (nullArgs)
 import Grammar.Lexicon as Lexicon
@@ -14,6 +15,8 @@ import Html exposing (Html, div, h1, p, span, text)
 import Html.Attributes as Attr
 import Html.Events as Events
 import Json.Decode as Decode
+import Json.Encode as Encode
+import Story exposing (SavedStory, StoryMode(..), buildSavedStory, decodeSavedStories, encodeSavedStories)
 import Time
 import Timeline
 
@@ -27,13 +30,16 @@ import Timeline
 port startOAuthLogin : () -> Cmd msg
 
 
-port analyzeNarrative : String -> Cmd msg
+port saveApiKey : String -> Cmd msg
 
 
-port oauthStatusChanged : (Bool -> msg) -> Sub msg
+port clearApiKey : () -> Cmd msg
 
 
-port llmResponseReceived : (Decode.Value -> msg) -> Sub msg
+port saveStories : Encode.Value -> Cmd msg
+
+
+port oauthKeyReceived : (String -> msg) -> Sub msg
 
 
 
@@ -71,6 +77,29 @@ type FeedbackPhase
 
 
 -- =========================================================
+-- Story Languages
+-- =========================================================
+
+
+storyLanguages : List { code : String, name : String }
+storyLanguages =
+    [ { code = "es", name = "Spanish" }
+    , { code = "fr", name = "French" }
+    , { code = "de", name = "German" }
+    , { code = "it", name = "Italian" }
+    , { code = "pt", name = "Portuguese" }
+    , { code = "ja", name = "Japanese" }
+    , { code = "ko", name = "Korean" }
+    , { code = "zh", name = "Chinese" }
+    , { code = "ru", name = "Russian" }
+    , { code = "ar", name = "Arabic" }
+    , { code = "hi", name = "Hindi" }
+    , { code = "tr", name = "Turkish" }
+    ]
+
+
+
+-- =========================================================
 -- Model
 -- =========================================================
 
@@ -93,13 +122,19 @@ type alias Model =
     , tenseTimeline : Animator.Timeline Tense
     , result : Result String (List SentenceWord)
     , appMode : AppMode
-    , oauthLoggedIn : Bool
+    , apiKey : Maybe String
     , narrativeInput : String
     , exerciseState : Maybe ExerciseState
     , llmLoading : Bool
     , llmError : Maybe String
     , feedbackTimeline : Animator.Timeline FeedbackPhase
     , exerciseTenseTimeline : Animator.Timeline Tense
+    , availableModels : List Api.LLMModel
+    , selectedModelId : String
+    , exerciseInputMode : ExerciseInputMode
+    , selectedLanguage : String
+    , savedStories : List SavedStory
+    , currentTime : Time.Posix
     }
 
 
@@ -131,13 +166,21 @@ type Msg
     | SelectVerbTense VerbTense
     | SwitchAppMode AppMode
     | StartLogin
-    | OAuthStatusChanged Bool
+    | OAuthKeyReceived String
     | UpdateNarrativeInput String
     | SubmitNarrative
-    | LLMResponseReceived Decode.Value
+    | AnalyzeResult (Result Api.ApiError (List ExerciseItem))
+    | GenerateResult (Result Api.ApiError (List ExerciseItem))
+    | ModelsResult (Result Api.ApiError (List Api.LLMModel))
     | ExerciseSelectTense VerbTense
     | NextExerciseItem
     | ResetExercise
+    | SelectModel String
+    | SetExerciseInputMode ExerciseInputMode
+    | SelectLanguage String
+    | SubmitGenerateStory
+    | LoadSavedStory SavedStory
+    | DeleteSavedStory String
 
 
 
@@ -174,13 +217,24 @@ animator =
 
 
 type alias Flags =
-    { loggedIn : Bool }
+    { apiKey : Maybe String
+    , savedStories : List SavedStory
+    }
 
 
 decodeFlags : Decode.Decoder Flags
 decodeFlags =
-    Decode.map Flags
-        (Decode.field "loggedIn" Decode.bool)
+    Decode.map2 Flags
+        (Decode.oneOf
+            [ Decode.field "apiKey" (Decode.nullable Decode.string)
+            , Decode.succeed Nothing
+            ]
+        )
+        (Decode.oneOf
+            [ Decode.field "savedStories" decodeSavedStories
+            , Decode.succeed []
+            ]
+        )
 
 
 init : Decode.Value -> ( Model, Cmd Msg )
@@ -188,7 +242,7 @@ init flagsValue =
     let
         flags =
             Decode.decodeValue decodeFlags flagsValue
-                |> Result.withDefault { loggedIn = False }
+                |> Result.withDefault { apiKey = Nothing, savedStories = [] }
 
         defaultVerb =
             List.drop 6 Lexicon.verbs
@@ -241,16 +295,29 @@ init flagsValue =
             , tenseTimeline = Animator.init Present
             , result = Ok []
             , appMode = CalculatorMode
-            , oauthLoggedIn = flags.loggedIn
+            , apiKey = flags.apiKey
             , narrativeInput = ""
             , exerciseState = Nothing
             , llmLoading = False
             , llmError = Nothing
             , feedbackTimeline = Animator.init FeedbackHidden
             , exerciseTenseTimeline = Animator.init Present
+            , availableModels = []
+            , selectedModelId = "openrouter/free"
+            , exerciseInputMode = WriteOwnMode
+            , selectedLanguage = "es"
+            , savedStories = flags.savedStories
+            , currentTime = Time.millisToPosix 0
             }
     in
-    ( recompute model, Cmd.none )
+    ( recompute model
+    , case flags.apiKey of
+        Just key ->
+            Api.fetchModels { apiKey = key, onResult = ModelsResult }
+
+        Nothing ->
+            Cmd.none
+    )
 
 
 
@@ -297,36 +364,65 @@ recompute model =
 
 
 -- =========================================================
--- LLM Response Decoder
+-- Helpers
 -- =========================================================
 
 
-decodeLLMResponse : Decode.Decoder (List ExerciseItem)
-decodeLLMResponse =
-    Decode.field "sentences"
-        (Decode.list decodeExerciseItem)
+handleLLMSuccess : List ExerciseItem -> StoryMode -> Model -> ( Model, Cmd Msg )
+handleLLMSuccess items mode model =
+    if List.isEmpty items then
+        ( { model | llmLoading = False, llmError = Just "No sentences found in the narrative. Try writing more." }, Cmd.none )
+
+    else
+        let
+            exState =
+                initExercise items
+
+            firstTense =
+                List.head items
+                    |> Maybe.map .correctTense
+                    |> Maybe.withDefault SimplePresent
+
+            spec =
+                verbTenseToSpec firstTense
+
+            story =
+                buildSavedStory
+                    { language = model.selectedLanguage
+                    , mode = mode
+                    , items = items
+                    , nowMillis = Time.posixToMillis model.currentTime
+                    }
+
+            newStories =
+                story :: model.savedStories
+        in
+        ( { model
+            | llmLoading = False
+            , llmError = Nothing
+            , exerciseState = Just exState
+            , exerciseTenseTimeline = Animator.init spec.tense
+            , savedStories = newStories
+          }
+        , saveStories (encodeSavedStories newStories)
+        )
 
 
-decodeExerciseItem : Decode.Decoder ExerciseItem
-decodeExerciseItem =
-    Decode.map3 ExerciseItem
-        (Decode.field "original" Decode.string)
-        (Decode.field "verbTense" decodeVerbTense)
-        (Decode.field "explanation" Decode.string)
-
-
-decodeVerbTense : Decode.Decoder VerbTense
-decodeVerbTense =
-    Decode.string
-        |> Decode.andThen
-            (\s ->
-                case verbTenseFromString s of
-                    Just vt ->
-                        Decode.succeed vt
-
-                    Nothing ->
-                        Decode.fail ("Unknown verb tense: " ++ s)
+handleLLMError : Api.ApiError -> Model -> ( Model, Cmd Msg )
+handleLLMError err model =
+    case err of
+        Api.Unauthorized ->
+            ( { model
+                | llmLoading = False
+                , llmError = Just (Api.errorToString err)
+                , apiKey = Nothing
+                , availableModels = []
+              }
+            , clearApiKey ()
             )
+
+        _ ->
+            ( { model | llmLoading = False, llmError = Just (Api.errorToString err) }, Cmd.none )
 
 
 
@@ -339,7 +435,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Tick newTime ->
-            ( model |> Animator.update newTime animator, Cmd.none )
+            ( { model | currentTime = newTime } |> Animator.update newTime animator, Cmd.none )
 
         SetClauseMode mode ->
             ( recompute { model | clauseMode = mode }, Cmd.none )
@@ -517,8 +613,13 @@ update msg model =
         StartLogin ->
             ( model, startOAuthLogin () )
 
-        OAuthStatusChanged loggedIn ->
-            ( { model | oauthLoggedIn = loggedIn }, Cmd.none )
+        OAuthKeyReceived key ->
+            ( { model | apiKey = Just key }
+            , Cmd.batch
+                [ saveApiKey key
+                , Api.fetchModels { apiKey = key, onResult = ModelsResult }
+                ]
+            )
 
         UpdateNarrativeInput val ->
             ( { model | narrativeInput = val }, Cmd.none )
@@ -528,45 +629,46 @@ update msg model =
                 ( model, Cmd.none )
 
             else
-                ( { model | llmLoading = True, llmError = Nothing }
-                , analyzeNarrative model.narrativeInput
-                )
+                case model.apiKey of
+                    Just key ->
+                        ( { model | llmLoading = True, llmError = Nothing }
+                        , Api.analyzeNarrative
+                            { apiKey = key
+                            , narrative = model.narrativeInput
+                            , model = model.selectedModelId
+                            , onResult = AnalyzeResult
+                            }
+                        )
 
-        LLMResponseReceived value ->
-            case Decode.decodeValue (Decode.field "error" Decode.string) value of
-                Ok errMsg ->
-                    ( { model | llmLoading = False, llmError = Just errMsg }, Cmd.none )
+                    Nothing ->
+                        ( { model | llmError = Just "Not connected to OpenRouter. Please connect first." }, Cmd.none )
+
+        AnalyzeResult result ->
+            case result of
+                Ok items ->
+                    handleLLMSuccess items (UserWritten model.narrativeInput) model
+
+                Err err ->
+                    handleLLMError err model
+
+        GenerateResult result ->
+            case result of
+                Ok items ->
+                    handleLLMSuccess items AIGenerated model
+
+                Err err ->
+                    handleLLMError err model
+
+        ModelsResult result ->
+            case result of
+                Ok models ->
+                    ( { model | availableModels = models }, Cmd.none )
+
+                Err Api.Unauthorized ->
+                    ( { model | apiKey = Nothing, availableModels = [] }, clearApiKey () )
 
                 Err _ ->
-                    case Decode.decodeValue decodeLLMResponse value of
-                        Ok items ->
-                            if List.isEmpty items then
-                                ( { model | llmLoading = False, llmError = Just "No sentences found in the narrative. Try writing more." }, Cmd.none )
-
-                            else
-                                let
-                                    exState =
-                                        initExercise items
-
-                                    firstTense =
-                                        List.head items
-                                            |> Maybe.map .correctTense
-                                            |> Maybe.withDefault SimplePresent
-
-                                    spec =
-                                        verbTenseToSpec firstTense
-                                in
-                                ( { model
-                                    | llmLoading = False
-                                    , llmError = Nothing
-                                    , exerciseState = Just exState
-                                    , exerciseTenseTimeline = Animator.init spec.tense
-                                  }
-                                , Cmd.none
-                                )
-
-                        Err decodeErr ->
-                            ( { model | llmLoading = False, llmError = Just ("Failed to parse response: " ++ Decode.errorToString decodeErr) }, Cmd.none )
+                    ( model, Cmd.none )
 
         ExerciseSelectTense vt ->
             case model.exerciseState of
@@ -640,6 +742,62 @@ update msg model =
                 , exerciseTenseTimeline = Animator.init Present
               }
             , Cmd.none
+            )
+
+        SelectModel modelId ->
+            ( { model | selectedModelId = modelId }, Cmd.none )
+
+        SetExerciseInputMode mode ->
+            ( { model | exerciseInputMode = mode }, Cmd.none )
+
+        SelectLanguage code ->
+            ( { model | selectedLanguage = code }, Cmd.none )
+
+        SubmitGenerateStory ->
+            case model.apiKey of
+                Just key ->
+                    ( { model | llmLoading = True, llmError = Nothing }
+                    , Api.generateStory
+                        { apiKey = key
+                        , language = model.selectedLanguage
+                        , model = model.selectedModelId
+                        , onResult = GenerateResult
+                        }
+                    )
+
+                Nothing ->
+                    ( { model | llmError = Just "Not connected to OpenRouter. Please connect first." }, Cmd.none )
+
+        LoadSavedStory story ->
+            let
+                exState =
+                    initExercise story.items
+
+                firstTense =
+                    List.head story.items
+                        |> Maybe.map .correctTense
+                        |> Maybe.withDefault SimplePresent
+
+                spec =
+                    verbTenseToSpec firstTense
+            in
+            ( { model
+                | exerciseState = Just exState
+                , exerciseTenseTimeline = Animator.init spec.tense
+                , feedbackTimeline = Animator.init FeedbackHidden
+                , llmLoading = False
+                , llmError = Nothing
+              }
+            , Cmd.none
+            )
+
+        DeleteSavedStory storyId ->
+            let
+                newStories =
+                    List.filter (\s -> s.id /= storyId) model.savedStories
+            in
+            ( { model | savedStories = newStories }
+            , saveStories (encodeSavedStories newStories)
             )
 
 
@@ -786,8 +944,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Animator.toSubscription Tick model animator
-        , oauthStatusChanged OAuthStatusChanged
-        , llmResponseReceived LLMResponseReceived
+        , oauthKeyReceived OAuthKeyReceived
         ]
 
 
@@ -932,17 +1089,29 @@ viewExerciseTab model =
                 }
     in
     viewExercise
-        { oauthLoggedIn = model.oauthLoggedIn
+        { oauthLoggedIn = model.apiKey /= Nothing
         , narrativeInput = model.narrativeInput
         , exerciseState = model.exerciseState
         , llmLoading = model.llmLoading
         , llmError = model.llmError
+        , availableModels = model.availableModels
+        , selectedModelId = model.selectedModelId
+        , onSelectModel = SelectModel
         , onStartLogin = StartLogin
         , onUpdateNarrative = UpdateNarrativeInput
         , onSubmitNarrative = SubmitNarrative
         , onNextItem = NextExerciseItem
         , onResetExercise = ResetExercise
         , timelineView = timelineHtml
+        , exerciseInputMode = model.exerciseInputMode
+        , selectedLanguage = model.selectedLanguage
+        , storyLanguages = storyLanguages
+        , onSetExerciseInputMode = SetExerciseInputMode
+        , onSelectLanguage = SelectLanguage
+        , onSubmitGenerateStory = SubmitGenerateStory
+        , savedStories = model.savedStories
+        , onLoadSavedStory = LoadSavedStory
+        , onDeleteSavedStory = DeleteSavedStory
         }
 
 
@@ -1436,11 +1605,6 @@ seg selected msgVal label =
 segNone : Bool -> msg -> String -> SegmentOption msg
 segNone selected msgVal label =
     { selected = selected, disabled = False, style = NoneSegment, msg = msgVal, label = label }
-
-
-segDisabled : msg -> String -> SegmentOption msg
-segDisabled msgVal label =
-    { selected = False, disabled = True, style = NormalSegment, msg = msgVal, label = label }
 
 
 segmentedControl : List (SegmentOption Msg) -> Html Msg

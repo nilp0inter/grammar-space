@@ -32,7 +32,7 @@ async function handleOAuthCallback() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
 
-  if (!code) return;
+  if (!code) return null;
 
   const verifier = sessionStorage.getItem("pkce_verifier");
   sessionStorage.removeItem("pkce_verifier");
@@ -40,7 +40,7 @@ async function handleOAuthCallback() {
   if (!verifier) {
     console.error("No PKCE verifier found in session storage");
     window.history.replaceState({}, "", CALLBACK_URL);
-    return;
+    return null;
   }
 
   try {
@@ -61,85 +61,39 @@ async function handleOAuthCallback() {
 
     const { key } = await res.json();
     sessionStorage.setItem("openrouter_key", key);
+    window.history.replaceState({}, "", CALLBACK_URL);
+    return key;
   } catch (err) {
     console.error("OAuth key exchange failed:", err);
+    window.history.replaceState({}, "", CALLBACK_URL);
+    return null;
   }
-
-  // Clean URL
-  window.history.replaceState({}, "", CALLBACK_URL);
 }
 
 // =========================================================
-// Init (wrapped in async IIFE for compatibility)
+// Init
 // =========================================================
 
-const SYSTEM_PROMPT = `You are a language analysis assistant. The user will provide a short narrative written in a non-English language (such as Spanish, French, Japanese, etc.).
-
-Your task:
-1. Split the narrative into individual sentences.
-2. For each sentence, determine the primary English verb tense that would be used to translate it.
-3. Provide a brief explanation (1 sentence) of why that tense applies.
-
-The verb tense MUST be one of these exact values:
-SimplePast, PastContinuous, PastPerfect, PastPerfectContinuous,
-SimplePresent, PresentContinuous, PresentPerfect, PresentPerfectContinuous,
-SimpleFuture, FutureContinuous, FuturePerfect, FuturePerfectContinuous
-
-Respond with a JSON object containing a "sentences" array.`;
-
-const RESPONSE_SCHEMA = {
-  type: "json_schema",
-  json_schema: {
-    name: "tense_analysis",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        sentences: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              original: { type: "string" },
-              verbTense: {
-                type: "string",
-                enum: [
-                  "SimplePast",
-                  "PastContinuous",
-                  "PastPerfect",
-                  "PastPerfectContinuous",
-                  "SimplePresent",
-                  "PresentContinuous",
-                  "PresentPerfect",
-                  "PresentPerfectContinuous",
-                  "SimpleFuture",
-                  "FutureContinuous",
-                  "FuturePerfect",
-                  "FuturePerfectContinuous",
-                ],
-              },
-              explanation: { type: "string" },
-            },
-            required: ["original", "verbTense", "explanation"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["sentences"],
-      additionalProperties: false,
-    },
-  },
-};
-
 (async function main() {
-  await handleOAuthCallback();
+  const oauthKey = await handleOAuthCallback();
+  const existingKey = sessionStorage.getItem("openrouter_key");
+  const apiKey = oauthKey || existingKey || null;
 
-  const userKey = sessionStorage.getItem("openrouter_key");
+  let savedStories = [];
+  try {
+    const raw = localStorage.getItem("grammar_space_stories");
+    if (raw) savedStories = JSON.parse(raw);
+  } catch (_) {}
 
   const app = Elm.Main.init({
     node: document.getElementById("app"),
-    flags: { loggedIn: !!userKey },
+    flags: { apiKey, savedStories },
   });
+
+  // If we just got a key from OAuth callback, notify Elm
+  if (oauthKey) {
+    app.ports.oauthKeyReceived.send(oauthKey);
+  }
 
   // =========================================================
   // Port: startOAuthLogin
@@ -158,77 +112,26 @@ const RESPONSE_SCHEMA = {
   });
 
   // =========================================================
-  // Port: analyzeNarrative
+  // Port: saveApiKey / clearApiKey
   // =========================================================
 
-  app.ports.analyzeNarrative.subscribe(async (narrative) => {
-    const key = sessionStorage.getItem("openrouter_key");
+  app.ports.saveApiKey.subscribe((key) => {
+    sessionStorage.setItem("openrouter_key", key);
+  });
 
-    if (!key) {
-      app.ports.llmResponseReceived.send({
-        error: "Not connected to OpenRouter. Please connect first.",
-      });
-      return;
-    }
+  app.ports.clearApiKey.subscribe(() => {
+    sessionStorage.removeItem("openrouter_key");
+  });
 
+  // =========================================================
+  // Port: saveStories
+  // =========================================================
+
+  app.ports.saveStories.subscribe((stories) => {
     try {
-      const res = await fetch(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": window.location.origin,
-            "X-OpenRouter-Title": "Grammar Space",
-          },
-          body: JSON.stringify({
-            model: "openai/gpt-4o-mini",
-            messages: [
-              { role: "system", content: SYSTEM_PROMPT },
-              { role: "user", content: narrative },
-            ],
-            response_format: RESPONSE_SCHEMA,
-            temperature: 0.3,
-          }),
-        },
-      );
-
-      if (!res.ok) {
-        const status = res.status;
-        let msg;
-        if (status === 401) {
-          sessionStorage.removeItem("openrouter_key");
-          app.ports.oauthStatusChanged.send(false);
-          msg = "API key is invalid or revoked. Please reconnect.";
-        } else if (status === 402) {
-          msg = "Insufficient credits on your OpenRouter account.";
-        } else if (status === 429) {
-          msg = "Rate limited. Please wait a moment and try again.";
-        } else {
-          const body = await res.json().catch(() => ({}));
-          msg = body.error?.message || `API error: ${status}`;
-        }
-        app.ports.llmResponseReceived.send({ error: msg });
-        return;
-      }
-
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-
-      if (!content) {
-        app.ports.llmResponseReceived.send({
-          error: "No content in API response.",
-        });
-        return;
-      }
-
-      const parsed = JSON.parse(content);
-      app.ports.llmResponseReceived.send(parsed);
+      localStorage.setItem("grammar_space_stories", JSON.stringify(stories));
     } catch (err) {
-      app.ports.llmResponseReceived.send({
-        error: err.message || "Network error. Please check your connection.",
-      });
+      console.error("Failed to save stories:", err);
     }
   });
 })();

@@ -3,9 +3,10 @@ module Exercise.View exposing (viewExercise)
 import Array
 import Exercise.Types exposing (..)
 import Grammar.Types exposing (VerbTense, verbTenseLabel)
-import Html exposing (Html, button, div, p, span, text, textarea)
+import Html exposing (Html, button, div, label, option, p, select, span, text, textarea)
 import Html.Attributes as Attr
 import Html.Events as Events
+import Story exposing (SavedStory, StoryMode(..))
 
 
 type alias ExerciseConfig msg =
@@ -14,12 +15,24 @@ type alias ExerciseConfig msg =
     , exerciseState : Maybe ExerciseState
     , llmLoading : Bool
     , llmError : Maybe String
+    , availableModels : List { id : String, name : String }
+    , selectedModelId : String
+    , onSelectModel : String -> msg
     , onStartLogin : msg
     , onUpdateNarrative : String -> msg
     , onSubmitNarrative : msg
     , onNextItem : msg
     , onResetExercise : msg
     , timelineView : Html msg
+    , exerciseInputMode : ExerciseInputMode
+    , selectedLanguage : String
+    , storyLanguages : List { code : String, name : String }
+    , onSetExerciseInputMode : ExerciseInputMode -> msg
+    , onSelectLanguage : String -> msg
+    , onSubmitGenerateStory : msg
+    , savedStories : List SavedStory
+    , onLoadSavedStory : SavedStory -> msg
+    , onDeleteSavedStory : String -> msg
     }
 
 
@@ -60,6 +73,67 @@ viewConnectPrompt onLogin =
 viewNarrativeInput : ExerciseConfig msg -> Html msg
 viewNarrativeInput config =
     div [ Attr.class "flex flex-col items-center gap-4 w-full" ]
+        [ viewInputModeToggle config
+        , case config.exerciseInputMode of
+            WriteOwnMode ->
+                viewWriteOwnInput config
+
+            GenerateStoryMode ->
+                viewGenerateStoryInput config
+
+            SavedStoriesMode ->
+                viewSavedStoriesList config
+        , case config.exerciseInputMode of
+            SavedStoriesMode ->
+                text ""
+
+            _ ->
+                div [ Attr.class "flex flex-col items-center gap-4 w-full" ]
+                    [ viewModelSelector config
+                    , case config.llmError of
+                        Just err ->
+                            div [ Attr.class "w-full max-w-lg px-4 py-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm" ]
+                                [ text err ]
+
+                        Nothing ->
+                            text ""
+                    , viewSubmitButton config
+                    ]
+        ]
+
+
+viewInputModeToggle : ExerciseConfig msg -> Html msg
+viewInputModeToggle config =
+    div [ Attr.class "inline-flex rounded-full bg-slate-800/50 p-0.5" ]
+        [ viewModeTab (config.exerciseInputMode == WriteOwnMode) (config.onSetExerciseInputMode WriteOwnMode) "Write Your Own"
+        , viewModeTab (config.exerciseInputMode == GenerateStoryMode) (config.onSetExerciseInputMode GenerateStoryMode) "Generate Story"
+        , viewModeTab (config.exerciseInputMode == SavedStoriesMode) (config.onSetExerciseInputMode SavedStoriesMode) "Saved Stories"
+        ]
+
+
+viewModeTab : Bool -> msg -> String -> Html msg
+viewModeTab isActive msg labelText =
+    let
+        baseClass =
+            "px-5 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer select-none"
+
+        colorClass =
+            if isActive then
+                "bg-indigo-600 text-white"
+
+            else
+                "text-slate-400 hover:text-slate-200"
+    in
+    span
+        [ Attr.class (baseClass ++ " " ++ colorClass)
+        , Events.onClick msg
+        ]
+        [ text labelText ]
+
+
+viewWriteOwnInput : ExerciseConfig msg -> Html msg
+viewWriteOwnInput config =
+    div [ Attr.class "flex flex-col items-center gap-4 w-full" ]
         [ p [ Attr.class "text-slate-400 text-center max-w-lg" ]
             [ text "Write a short narrative in your native language (e.g., Spanish, French, Japanese). The AI will identify the verb tenses used and quiz you on the correct English equivalents." ]
         , textarea
@@ -69,31 +143,188 @@ viewNarrativeInput config =
             , Events.onInput config.onUpdateNarrative
             ]
             []
-        , case config.llmError of
-            Just err ->
-                div [ Attr.class "w-full max-w-lg px-4 py-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm" ]
-                    [ text err ]
+        ]
 
-            Nothing ->
-                text ""
-        , button
-            [ Attr.class
-                (if config.llmLoading || String.isEmpty (String.trim config.narrativeInput) then
-                    "px-6 py-3 rounded-full bg-slate-700 text-slate-500 font-medium cursor-not-allowed"
 
-                 else
-                    "px-6 py-3 rounded-full bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
+viewGenerateStoryInput : ExerciseConfig msg -> Html msg
+viewGenerateStoryInput config =
+    div [ Attr.class "flex flex-col items-center gap-4 w-full" ]
+        [ p [ Attr.class "text-slate-400 text-center max-w-lg" ]
+            [ text "The AI will generate a short everyday story in the language you choose, using a variety of verb tenses from past to future. Then you'll identify the English equivalents." ]
+        , div [ Attr.class "flex flex-col gap-1 w-full max-w-lg" ]
+            [ label [ Attr.class "text-xs font-medium text-slate-500 uppercase tracking-wider" ]
+                [ text "Story Language" ]
+            , select
+                [ Attr.class "w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 appearance-none"
+                , Attr.value config.selectedLanguage
+                , Events.onInput config.onSelectLanguage
+                ]
+                (List.map
+                    (\lang ->
+                        option
+                            [ Attr.value lang.code
+                            , Attr.selected (lang.code == config.selectedLanguage)
+                            ]
+                            [ text lang.name ]
+                    )
+                    config.storyLanguages
                 )
-            , Events.onClick config.onSubmitNarrative
-            , Attr.disabled (config.llmLoading || String.isEmpty (String.trim config.narrativeInput))
-            ]
-            [ if config.llmLoading then
-                text "Analyzing..."
-
-              else
-                text "Start Exercise"
             ]
         ]
+
+
+viewSubmitButton : ExerciseConfig msg -> Html msg
+viewSubmitButton config =
+    case config.exerciseInputMode of
+        WriteOwnMode ->
+            let
+                isDisabled =
+                    config.llmLoading || String.isEmpty (String.trim config.narrativeInput)
+            in
+            button
+                [ Attr.class
+                    (if isDisabled then
+                        "px-6 py-3 rounded-full bg-slate-700 text-slate-500 font-medium cursor-not-allowed"
+
+                     else
+                        "px-6 py-3 rounded-full bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
+                    )
+                , Events.onClick config.onSubmitNarrative
+                , Attr.disabled isDisabled
+                ]
+                [ if config.llmLoading then
+                    text "Analyzing..."
+
+                  else
+                    text "Start Exercise"
+                ]
+
+        GenerateStoryMode ->
+            button
+                [ Attr.class
+                    (if config.llmLoading then
+                        "px-6 py-3 rounded-full bg-slate-700 text-slate-500 font-medium cursor-not-allowed"
+
+                     else
+                        "px-6 py-3 rounded-full bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
+                    )
+                , Events.onClick config.onSubmitGenerateStory
+                , Attr.disabled config.llmLoading
+                ]
+                [ if config.llmLoading then
+                    text "Generating..."
+
+                  else
+                    text "Generate & Start"
+                ]
+
+        SavedStoriesMode ->
+            text ""
+
+
+viewModelSelector : ExerciseConfig msg -> Html msg
+viewModelSelector config =
+    let
+        models =
+            if List.isEmpty config.availableModels then
+                [ { id = config.selectedModelId, name = config.selectedModelId } ]
+
+            else
+                config.availableModels
+    in
+    div [ Attr.class "flex flex-col gap-1 w-full max-w-lg" ]
+        [ label [ Attr.class "text-xs font-medium text-slate-500 uppercase tracking-wider" ]
+            [ text "Model" ]
+        , select
+            [ Attr.class "w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 appearance-none"
+            , Attr.value config.selectedModelId
+            , Events.onInput config.onSelectModel
+            ]
+            (List.map
+                (\m ->
+                    option
+                        [ Attr.value m.id
+                        , Attr.selected (m.id == config.selectedModelId)
+                        ]
+                        [ text m.name ]
+                )
+                models
+            )
+        ]
+
+
+
+-- =========================================================
+-- Saved Stories List
+-- =========================================================
+
+
+viewSavedStoriesList : ExerciseConfig msg -> Html msg
+viewSavedStoriesList config =
+    if List.isEmpty config.savedStories then
+        div [ Attr.class "flex flex-col items-center gap-3 py-8" ]
+            [ p [ Attr.class "text-slate-500 text-sm" ]
+                [ text "No saved stories yet. Complete an exercise to save it." ]
+            ]
+
+    else
+        div [ Attr.class "flex flex-col gap-3 w-full max-w-lg" ]
+            (List.map (viewStoryCard config) config.savedStories)
+
+
+viewStoryCard : ExerciseConfig msg -> SavedStory -> Html msg
+viewStoryCard config story =
+    let
+        langName =
+            config.storyLanguages
+                |> List.filter (\l -> l.code == story.language)
+                |> List.head
+                |> Maybe.map .name
+                |> Maybe.withDefault story.language
+
+        sentenceCount =
+            List.length story.items
+
+        modeLabel =
+            case story.mode of
+                UserWritten _ ->
+                    "Written"
+
+                AIGenerated ->
+                    "Generated"
+    in
+    div [ Attr.class "flex items-center gap-3 p-4 rounded-xl bg-slate-800/50 border border-slate-700/50" ]
+        [ div [ Attr.class "flex-1 min-w-0" ]
+            [ div [ Attr.class "flex items-center gap-2 mb-1" ]
+                [ span [ Attr.class "text-white text-sm font-medium truncate" ]
+                    [ text story.title ]
+                ]
+            , div [ Attr.class "flex items-center gap-2" ]
+                [ span [ Attr.class "px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs" ]
+                    [ text langName ]
+                , span [ Attr.class "px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 text-xs" ]
+                    [ text modeLabel ]
+                , span [ Attr.class "text-slate-500 text-xs" ]
+                    [ text (String.fromInt sentenceCount ++ " sentences") ]
+                ]
+            ]
+        , button
+            [ Attr.class "px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-500 transition-colors"
+            , Events.onClick (config.onLoadSavedStory story)
+            ]
+            [ text "Replay" ]
+        , button
+            [ Attr.class "px-3 py-2 rounded-full text-slate-500 hover:text-rose-400 text-sm transition-colors"
+            , Events.onClick (config.onDeleteSavedStory story.id)
+            ]
+            [ text "Delete" ]
+        ]
+
+
+
+-- =========================================================
+-- Active Exercise
+-- =========================================================
 
 
 viewExerciseActive : ExerciseConfig msg -> ExerciseState -> List (Html msg)

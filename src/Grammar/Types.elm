@@ -365,6 +365,46 @@ verbTenseFromString s =
             Nothing
 
 
+verbTenseToString : VerbTense -> String
+verbTenseToString vt =
+    case vt of
+        SimplePast ->
+            "SimplePast"
+
+        PastContinuous ->
+            "PastContinuous"
+
+        PastPerfect ->
+            "PastPerfect"
+
+        PastPerfectContinuous ->
+            "PastPerfectContinuous"
+
+        SimplePresent ->
+            "SimplePresent"
+
+        PresentContinuous ->
+            "PresentContinuous"
+
+        PresentPerfect ->
+            "PresentPerfect"
+
+        PresentPerfectContinuous ->
+            "PresentPerfectContinuous"
+
+        SimpleFuture ->
+            "SimpleFuture"
+
+        FutureContinuous ->
+            "FutureContinuous"
+
+        FuturePerfect ->
+            "FuturePerfect"
+
+        FuturePerfectContinuous ->
+            "FuturePerfectContinuous"
+
+
 verbTenseLabel : VerbTense -> String
 verbTenseLabel vt =
     case vt of
