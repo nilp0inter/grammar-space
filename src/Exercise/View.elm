@@ -601,10 +601,10 @@ viewTranslationSentenceCard item progress =
             [ text ("Sentence " ++ progress) ]
         , div [ Attr.class "flex flex-wrap items-center justify-center gap-2 min-h-[4rem] p-6 rounded-xl bg-slate-800/50 w-full" ]
             [ span [ Attr.class "text-lg text-white font-medium text-center" ]
-                [ text item.original ]
+                [ text item.prompt ]
             ]
         , p [ Attr.class "text-slate-400 text-sm" ]
-            [ text ("Translate this sentence using the " ++ verbTenseLabel item.correctTense ++ " tense") ]
+            [ text "Translate this sentence into English (check the timeline for the correct tense)" ]
         ]
 
 

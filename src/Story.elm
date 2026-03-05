@@ -87,6 +87,7 @@ encodeExerciseItem : ExerciseItem -> Encode.Value
 encodeExerciseItem item =
     Encode.object
         [ ( "original", Encode.string item.original )
+        , ( "prompt", Encode.string item.prompt )
         , ( "verbTense", Encode.string (verbTenseToString item.correctTense) )
         , ( "explanation", Encode.string item.explanation )
         ]
@@ -133,8 +134,9 @@ decodeStoryMode =
 
 decodeExerciseItem : Decode.Decoder ExerciseItem
 decodeExerciseItem =
-    Decode.map3 ExerciseItem
+    Decode.map4 ExerciseItem
         (Decode.field "original" Decode.string)
+        (Decode.field "prompt" Decode.string)
         (Decode.field "verbTense" decodeVerbTense)
         (Decode.field "explanation" Decode.string)
 

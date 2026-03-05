@@ -23,6 +23,7 @@ type ExercisePhase
 
 type alias ExerciseItem =
     { original : String
+    , prompt : String
     , correctTense : VerbTense
     , explanation : String
     }

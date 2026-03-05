@@ -35,6 +35,8 @@ SimplePast, PastContinuous, PastPerfect, PastPerfectContinuous,
 SimplePresent, PresentContinuous, PresentPerfect, PresentPerfectContinuous,
 SimpleFuture, FutureContinuous, FuturePerfect, FuturePerfectContinuous
 
+For each sentence, also provide a "prompt" field: the same sentence but with the main verb replaced by its base/dictionary form (infinitive) in the original language.
+
 Respond with a JSON object containing a "sentences" array."""
 
 
@@ -58,7 +60,7 @@ buildGenerateSystemPrompt topic tenses =
         ++ String.fromInt (min tenseCount 4)
         ++ " different tenses.\n\nAfter writing the story, analyze each sentence and determine the primary English verb tense that would be used to translate it.\n\nThe verb tense MUST be one of these exact values:\n"
         ++ tenseEnums
-        ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\nRespond with a JSON object containing a \"sentences\" array. The array MUST have at most 10 items."
+        ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\nFor each sentence, also provide a \"prompt\" field: the same sentence but with the main verb replaced by its base/dictionary form (infinitive) in the original language.\n\nRespond with a JSON object containing a \"sentences\" array. The array MUST have at most 10 items."
 
 
 evaluationSystemPrompt : String
@@ -157,6 +159,7 @@ responseSchema =
                                                 , ( "properties"
                                                   , Encode.object
                                                         [ ( "original", Encode.object [ ( "type", Encode.string "string" ) ] )
+                                                        , ( "prompt", Encode.object [ ( "type", Encode.string "string" ) ] )
                                                         , ( "verbTense"
                                                           , Encode.object
                                                                 [ ( "type", Encode.string "string" )
@@ -181,7 +184,7 @@ responseSchema =
                                                         , ( "explanation", Encode.object [ ( "type", Encode.string "string" ) ] )
                                                         ]
                                                   )
-                                                , ( "required", Encode.list Encode.string [ "original", "verbTense", "explanation" ] )
+                                                , ( "required", Encode.list Encode.string [ "original", "prompt", "verbTense", "explanation" ] )
                                                 , ( "additionalProperties", Encode.bool False )
                                                 ]
                                           )
@@ -212,8 +215,9 @@ decodeLLMResponse =
 
 decodeExerciseItem : Decode.Decoder ExerciseItem
 decodeExerciseItem =
-    Decode.map3 ExerciseItem
+    Decode.map4 ExerciseItem
         (Decode.field "original" Decode.string)
+        (Decode.field "prompt" Decode.string)
         (Decode.field "verbTense" decodeVerbTense)
         (Decode.field "explanation" Decode.string)
 
