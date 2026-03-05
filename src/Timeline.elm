@@ -38,7 +38,7 @@ type alias Config msg =
 
 leftEdge : Float
 leftEdge =
-    40
+    pastX - (presentX - pastX)
 
 
 pastX : Float
@@ -58,7 +58,7 @@ futureX =
 
 rightEdge : Float
 rightEdge =
-    620
+    futureX + (presentX - pastX)
 
 
 halfwayAnchorX : Float
@@ -83,7 +83,7 @@ triangleHeight =
 
 arrowDepth : Float
 arrowDepth =
-    90
+    110
 
 
 vArmHeight : Float
@@ -277,7 +277,7 @@ diagonalAnchorAndTarget : VerbTense -> ( Float, Float )
 diagonalAnchorAndTarget vt =
     case vt of
         PastPerfect ->
-            ( halfwayAnchorX, pastX )
+            ( pastX - (presentX - pastX), pastX )
 
         PresentPerfect ->
             ( pastX, presentX )
@@ -293,13 +293,13 @@ triangleLeftAndRight : VerbTense -> ( Float, Float )
 triangleLeftAndRight vt =
     case vt of
         PastPerfectContinuous ->
-            ( halfwayAnchorX, pastX )
+            ( pastX - (presentX - pastX), pastX )
 
         PresentPerfectContinuous ->
-            ( halfwayAnchorX, presentX )
+            ( pastX - (presentX - pastX), presentX )
 
         FuturePerfectContinuous ->
-            ( halfwayAnchorX, futureX )
+            ( pastX - (presentX - pastX), futureX )
 
         _ ->
             ( 0, 0 )
@@ -491,14 +491,53 @@ viewDiagonalArrow anchorX targetX color =
 
         ( edgeX, edgeY ) =
             circleEdge startX startY targetX axisY
+
+        gradientId =
+            "arrow-fade-" ++ ff anchorX ++ "-" ++ ff targetX
     in
     Svg.g []
-        [ Svg.line
+        [ Svg.node "defs"
+            []
+            [ Svg.node "linearGradient"
+                [ SA.id gradientId
+                , SA.gradientUnits "userSpaceOnUse"
+                , SA.x1 (ff startX)
+                , SA.y1 (ff startY)
+                , SA.x2 (ff edgeX)
+                , SA.y2 (ff edgeY)
+                ]
+                [ Svg.node "stop"
+                    [ SA.offset "0%"
+                    , SA.stopColor color
+                    , SA.stopOpacity "0"
+                    ]
+                    []
+                , Svg.node "stop"
+                    [ SA.offset "30%"
+                    , SA.stopColor color
+                    , SA.stopOpacity "0"
+                    ]
+                    []
+                , Svg.node "stop"
+                    [ SA.offset "90%"
+                    , SA.stopColor color
+                    , SA.stopOpacity "1"
+                    ]
+                    []
+                , Svg.node "stop"
+                    [ SA.offset "100%"
+                    , SA.stopColor color
+                    , SA.stopOpacity "1"
+                    ]
+                    []
+                ]
+            ]
+        , Svg.line
             [ SA.x1 (ff startX)
             , SA.y1 (ff startY)
             , SA.x2 (ff edgeX)
             , SA.y2 (ff edgeY)
-            , SA.stroke color
+            , SA.stroke ("url(#" ++ gradientId ++ ")")
             , SA.strokeWidth "2.5"
             ]
             []
@@ -665,10 +704,10 @@ viewStyles =
 .tense-shape.tense-selected {
     opacity: 1;
     transition: none;
-    animation: tense-pulse 2s ease-in-out infinite;
+    animation: tense-pulse 1.5s ease-in-out infinite;
 }
 .tense-shape.tense-selected .tense-visual {
-    filter: drop-shadow(0 0 6px rgba(255,255,255,0.5));
+    filter: brightness(1.3) drop-shadow(0 0 10px rgba(255,255,255,0.9));
     stroke-width: 4;
 }
 .tense-shape:hover {
@@ -687,7 +726,7 @@ viewStyles =
 .tense-shape.tense-correct {
     opacity: 1;
     transition: none;
-    animation: tense-correct-pulse 2s ease-in-out infinite;
+    animation: tense-correct-pulse 1.5s ease-in-out infinite;
 }
 .tense-shape.tense-correct .tense-visual {
     filter: brightness(1.2) drop-shadow(0 0 10px rgba(34,197,94,0.7));
@@ -1043,8 +1082,8 @@ view config =
     in
     Html.div [ Html.Attributes.class "w-full flex justify-center" ]
         [ svg
-            [ SA.viewBox "0 0 700 395"
-            , SA.width "700"
+            [ SA.viewBox "0 0 760 395"
+            , SA.width "760"
             , SA.class "max-w-full h-auto"
             , SA.style "user-select: none"
             ]
