@@ -316,7 +316,7 @@ init flagsValue =
             , sentenceTimeline = Animator.init Visible
             , tenseTimeline = Animator.init Present
             , result = Ok []
-            , appMode = CalculatorMode
+            , appMode = ExerciseMode
             , apiKey = flags.apiKey
             , narrativeInput = ""
             , exerciseState = Nothing
@@ -1374,8 +1374,8 @@ viewTitle =
 viewTabBar : AppMode -> Html Msg
 viewTabBar currentMode =
     div [ Attr.class "inline-flex rounded-full bg-slate-800/50 p-0.5" ]
-        [ viewTab (currentMode == CalculatorMode) (SwitchAppMode CalculatorMode) "Calculator"
-        , viewTab (currentMode == ExerciseMode) (SwitchAppMode ExerciseMode) "Exercise"
+        [ viewTab (currentMode == ExerciseMode) (SwitchAppMode ExerciseMode) "Exercise"
+        , viewTab (currentMode == CalculatorMode) (SwitchAppMode CalculatorMode) "Calculator"
         ]
 
 
