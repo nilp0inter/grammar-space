@@ -120,7 +120,7 @@ defaultArguments v =
             nullArgs
 
         Transitive ->
-            { nullArgs | argObj = Just (NP "the letter" Third Singular) }
+            { nullArgs | argObj = Just (NP "a book" Third Singular) }
 
         Ditransitive ->
             { nullArgs

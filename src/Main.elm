@@ -108,9 +108,10 @@ init : () -> ( Model, Cmd Msg )
 init _ =
     let
         defaultVerb =
-            List.head Lexicon.verbs
+            List.drop 6 Lexicon.verbs
+                |> List.head
                 |> Maybe.withDefault
-                    (Verb "be" "is" "was" "been" "being" Copular Predicative True)
+                    (Verb "write" "writes" "wrote" "written" "writing" Lexical Transitive True)
 
         defaultSubj =
             List.head Lexicon.subjects
@@ -152,7 +153,7 @@ init _ =
             , participlePol = Affirmative
             , style = Full
             , selectedSubjectIdx = 0
-            , selectedVerbIdx = 0
+            , selectedVerbIdx = 6
             , sentenceTimeline = Animator.init Visible
             , tenseTimeline = Animator.init Present
             , result = Ok []
