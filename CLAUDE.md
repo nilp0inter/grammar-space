@@ -69,3 +69,7 @@ flake.nix        — Nix dev environment
 - Use `Browser.element` for apps mounted into a DOM node
 - Keep Elm modules focused — one module per logical concern
 - Format Elm code with `elm-format` before committing
+
+## Git
+
+- **Always sign commits** with GPG. Never use `--no-gpg-sign`. If signing fails (e.g. GPG timeout), retry the same commit command — do not skip signing.
