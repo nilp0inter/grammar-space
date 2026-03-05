@@ -733,12 +733,12 @@ viewRow label content =
 
 viewClauseModeRow : Model -> Html Msg
 viewClauseModeRow model =
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (model.clauseMode == FiniteMode) False (SetClauseMode FiniteMode) "Finite"
-        , pill (model.clauseMode == ImperativeMode) False (SetClauseMode ImperativeMode) "Imperative"
-        , pill (model.clauseMode == InfinitiveMode) False (SetClauseMode InfinitiveMode) "Infinitive"
-        , pill (model.clauseMode == GerundMode) False (SetClauseMode GerundMode) "Gerund"
-        , pill (model.clauseMode == ParticipleMode) False (SetClauseMode ParticipleMode) "Participle"
+    segmentedControlWrap
+        [ seg (model.clauseMode == FiniteMode) (SetClauseMode FiniteMode) "Finite"
+        , seg (model.clauseMode == ImperativeMode) (SetClauseMode ImperativeMode) "Imperative"
+        , seg (model.clauseMode == InfinitiveMode) (SetClauseMode InfinitiveMode) "Infinitive"
+        , seg (model.clauseMode == GerundMode) (SetClauseMode GerundMode) "Gerund"
+        , seg (model.clauseMode == ParticipleMode) (SetClauseMode ParticipleMode) "Participle"
         ]
 
 
@@ -748,10 +748,10 @@ viewTenseRow model =
         fs =
             model.finiteSpec
     in
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (fs.fsTense == Past) False (SetTense Past) "Past"
-        , pill (fs.fsTense == Present) False (SetTense Present) "Present"
-        , pill (fs.fsTense == Future) False (SetTense Future) "Future"
+    segmentedControl
+        [ seg (fs.fsTense == Past) (SetTense Past) "Past"
+        , seg (fs.fsTense == Present) (SetTense Present) "Present"
+        , seg (fs.fsTense == Future) (SetTense Future) "Future"
         ]
 
 
@@ -761,15 +761,15 @@ viewModalRow model =
         fs =
             model.finiteSpec
     in
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (fs.fsModal == Nothing) False (SetModal Nothing) "None"
-        , pill (fs.fsModal == Just Can) False (SetModal (Just Can)) "can"
-        , pill (fs.fsModal == Just Should) False (SetModal (Just Should)) "should"
-        , pill (fs.fsModal == Just Must) False (SetModal (Just Must)) "must"
-        , pill (fs.fsModal == Just Would) False (SetModal (Just Would)) "would"
-        , pill (fs.fsModal == Just May) False (SetModal (Just May)) "may"
-        , pill (fs.fsModal == Just Might) False (SetModal (Just Might)) "might"
-        , pill (fs.fsModal == Just Will) False (SetModal (Just Will)) "will"
+    segmentedControlWrap
+        [ segNone (fs.fsModal == Nothing) (SetModal Nothing) "None"
+        , seg (fs.fsModal == Just Can) (SetModal (Just Can)) "can"
+        , seg (fs.fsModal == Just Should) (SetModal (Just Should)) "should"
+        , seg (fs.fsModal == Just Must) (SetModal (Just Must)) "must"
+        , seg (fs.fsModal == Just Would) (SetModal (Just Would)) "would"
+        , seg (fs.fsModal == Just May) (SetModal (Just May)) "may"
+        , seg (fs.fsModal == Just Might) (SetModal (Just Might)) "might"
+        , seg (fs.fsModal == Just Will) (SetModal (Just Will)) "will"
         ]
 
 
@@ -783,15 +783,15 @@ viewAspectRow model =
             not model.verb.vAllowsProg
     in
     div [ Attr.class "flex flex-wrap gap-2" ]
-        [ togglePill perf False TogglePerfect "Perfect"
-        , togglePill prog isStative ToggleProgressive "Progressive"
+        [ toggle perf False TogglePerfect "Perfect"
+        , toggle prog isStative ToggleProgressive "Progressive"
         ]
 
 
 viewGerundAspectRow : Model -> Html Msg
 viewGerundAspectRow model =
     div [ Attr.class "flex flex-wrap gap-2" ]
-        [ togglePill model.gerundSpec.perfect False TogglePerfect "Perfect"
+        [ toggle model.gerundSpec.perfect False TogglePerfect "Perfect"
         ]
 
 
@@ -820,9 +820,9 @@ viewVoiceRow model =
         v =
             currentVoice model
     in
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (v == Active) False (SetVoice Active) "Active"
-        , pill (v == Passive) False (SetVoice Passive) "Passive"
+    segmentedControl
+        [ seg (v == Active) (SetVoice Active) "Active"
+        , seg (v == Passive) (SetVoice Passive) "Passive"
         ]
 
 
@@ -851,9 +851,9 @@ viewPolarityRow model =
         p =
             currentPolarity model
     in
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (p == Affirmative) False (SetPolarity Affirmative) "Affirmative"
-        , pill (p == Negative) False (SetPolarity Negative) "Negative"
+    segmentedControl
+        [ seg (p == Affirmative) (SetPolarity Affirmative) "Affirmative"
+        , seg (p == Negative) (SetPolarity Negative) "Negative"
         ]
 
 
@@ -878,9 +878,9 @@ currentPolarity model =
 
 viewStyleRow : Model -> Html Msg
 viewStyleRow model =
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (model.style == Full) False (SetStyle Full) "Full"
-        , pill (model.style == Contracted) False (SetStyle Contracted) "Contracted"
+    segmentedControl
+        [ seg (model.style == Full) (SetStyle Full) "Full"
+        , seg (model.style == Contracted) (SetStyle Contracted) "Contracted"
         ]
 
 
@@ -890,13 +890,13 @@ viewClauseTypeRow model =
         ct =
             model.finiteSpec.fsClauseType
     in
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (ct == Declarative) False (SetClauseType Declarative) "Declarative"
-        , pill (ct == YesNoQuestion) False (SetClauseType YesNoQuestion) "Yes/No Q"
-        , pill (isWhObject ct) False (SetClauseType (WhObject "what")) "Wh-Object"
-        , pill (isWhAdjunct ct) False (SetClauseType (WhAdjunct "why")) "Wh-Adjunct"
-        , pill (ct == WhSubject) False (SetClauseType WhSubject) "Wh-Subject"
-        , pill (ct == TagQuestion) False (SetClauseType TagQuestion) "Tag Q"
+    segmentedControlWrap
+        [ seg (ct == Declarative) (SetClauseType Declarative) "Declarative"
+        , seg (ct == YesNoQuestion) (SetClauseType YesNoQuestion) "Yes/No Q"
+        , seg (isWhObject ct) (SetClauseType (WhObject "what")) "Wh-Object"
+        , seg (isWhAdjunct ct) (SetClauseType (WhAdjunct "why")) "Wh-Adjunct"
+        , seg (ct == WhSubject) (SetClauseType WhSubject) "Wh-Subject"
+        , seg (ct == TagQuestion) (SetClauseType TagQuestion) "Tag Q"
         ]
 
 
@@ -922,10 +922,10 @@ isWhAdjunct ct =
 
 viewSubjectRow : Model -> Html Msg
 viewSubjectRow model =
-    div [ Attr.class "flex flex-wrap gap-2" ]
+    segmentedControlWrap
         (List.indexedMap
             (\idx ( label, _ ) ->
-                pill (model.selectedSubjectIdx == idx) False (SetSubject idx) label
+                seg (model.selectedSubjectIdx == idx) (SetSubject idx) label
             )
             Lexicon.subjects
         )
@@ -933,10 +933,10 @@ viewSubjectRow model =
 
 viewVerbRow : Model -> Html Msg
 viewVerbRow model =
-    div [ Attr.class "flex flex-wrap gap-2" ]
+    segmentedControlWrap
         (List.indexedMap
             (\idx v ->
-                pill (model.selectedVerbIdx == idx) False (SetVerb idx) (Lexicon.verbLabel v)
+                seg (model.selectedVerbIdx == idx) (SetVerb idx) (Lexicon.verbLabel v)
             )
             Lexicon.verbs
         )
@@ -998,36 +998,120 @@ argInput label val toMsg =
 
 viewParticipleFormRow : Model -> Html Msg
 viewParticipleFormRow model =
-    div [ Attr.class "flex flex-wrap gap-2" ]
-        [ pill (model.participleForm == PresParticipleActive) False (SetParticipleForm PresParticipleActive) "Pres Active"
-        , pill (model.participleForm == PresParticiplePassive) False (SetParticipleForm PresParticiplePassive) "Pres Passive"
-        , pill (model.participleForm == PastParticiplePassive) False (SetParticipleForm PastParticiplePassive) "Past Passive"
-        , pill (model.participleForm == PerfParticipleActive) False (SetParticipleForm PerfParticipleActive) "Perf Active"
-        , pill (model.participleForm == PerfParticiplePassive) False (SetParticipleForm PerfParticiplePassive) "Perf Passive"
+    segmentedControlWrap
+        [ seg (model.participleForm == PresParticipleActive) (SetParticipleForm PresParticipleActive) "Pres Active"
+        , seg (model.participleForm == PresParticiplePassive) (SetParticipleForm PresParticiplePassive) "Pres Passive"
+        , seg (model.participleForm == PastParticiplePassive) (SetParticipleForm PastParticiplePassive) "Past Passive"
+        , seg (model.participleForm == PerfParticipleActive) (SetParticipleForm PerfParticipleActive) "Perf Active"
+        , seg (model.participleForm == PerfParticiplePassive) (SetParticipleForm PerfParticiplePassive) "Perf Passive"
         ]
 
 
 
 -- =========================================================
--- Pill button components
+-- Segmented Control & Toggle components
 -- =========================================================
 
 
-pill : Bool -> Bool -> Msg -> String -> Html Msg
-pill selected disabled msg label =
+type SegmentStyle
+    = NormalSegment
+    | NoneSegment
+
+
+type alias SegmentOption msg =
+    { selected : Bool
+    , disabled : Bool
+    , style : SegmentStyle
+    , msg : msg
+    , label : String
+    }
+
+
+seg : Bool -> msg -> String -> SegmentOption msg
+seg selected msg label =
+    { selected = selected, disabled = False, style = NormalSegment, msg = msg, label = label }
+
+
+segNone : Bool -> msg -> String -> SegmentOption msg
+segNone selected msg label =
+    { selected = selected, disabled = False, style = NoneSegment, msg = msg, label = label }
+
+
+segDisabled : msg -> String -> SegmentOption msg
+segDisabled msg label =
+    { selected = False, disabled = True, style = NormalSegment, msg = msg, label = label }
+
+
+segmentedControl : List (SegmentOption Msg) -> Html Msg
+segmentedControl options =
+    div [ Attr.class "inline-flex rounded-full bg-slate-800/50 p-0.5" ]
+        (List.map viewSegment options)
+
+
+segmentedControlWrap : List (SegmentOption Msg) -> Html Msg
+segmentedControlWrap options =
+    div [ Attr.class "inline-flex flex-wrap gap-1 rounded-xl bg-slate-800/50 p-1" ]
+        (List.map viewSegment options)
+
+
+viewSegment : SegmentOption Msg -> Html Msg
+viewSegment opt =
     let
         baseClass =
             "px-3 py-1.5 rounded-full text-sm font-medium transition-colors cursor-pointer select-none"
 
         colorClass =
+            if opt.disabled then
+                "text-slate-600 cursor-not-allowed"
+
+            else if opt.selected then
+                case opt.style of
+                    NormalSegment ->
+                        "bg-indigo-600 text-white"
+
+                    NoneSegment ->
+                        "bg-slate-700 text-slate-300"
+
+            else
+                "text-slate-400 hover:text-slate-200"
+
+        attrs =
+            if opt.disabled then
+                [ Attr.class (baseClass ++ " " ++ colorClass) ]
+
+            else
+                [ Attr.class (baseClass ++ " " ++ colorClass)
+                , Events.onClick opt.msg
+                ]
+    in
+    span attrs [ text opt.label ]
+
+
+toggle : Bool -> Bool -> Msg -> String -> Html Msg
+toggle active disabled msg label =
+    let
+        baseClass =
+            "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer select-none"
+
+        colorClass =
             if disabled then
                 "bg-slate-800/50 text-slate-600 cursor-not-allowed"
 
-            else if selected then
-                "bg-indigo-600 text-white"
+            else if active then
+                "bg-emerald-600/20 text-emerald-300 ring-1 ring-emerald-500/40"
 
             else
-                "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                "bg-slate-800 text-slate-400"
+
+        dot =
+            if disabled then
+                span [ Attr.class "w-2.5 h-2.5 rounded-full border border-slate-700" ] []
+
+            else if active then
+                span [ Attr.class "w-2.5 h-2.5 rounded-full bg-emerald-500" ] []
+
+            else
+                span [ Attr.class "w-2.5 h-2.5 rounded-full border border-slate-500" ] []
 
         attrs =
             if disabled then
@@ -1038,12 +1122,7 @@ pill selected disabled msg label =
                 , Events.onClick msg
                 ]
     in
-    span attrs [ text label ]
-
-
-togglePill : Bool -> Bool -> Msg -> String -> Html Msg
-togglePill active disabled msg label =
-    pill active disabled msg label
+    span attrs [ dot, text label ]
 
 
 
