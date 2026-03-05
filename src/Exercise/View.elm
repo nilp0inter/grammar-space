@@ -7,6 +7,7 @@ import Html exposing (Html, button, div, label, option, p, select, span, text, t
 import Html.Attributes as Attr
 import Html.Events as Events
 import Json.Decode as Decode
+import Prompt
 import Story exposing (SavedStory, StoryMode(..))
 
 
@@ -608,7 +609,7 @@ viewTranslationSentenceCard item progress =
             [ text ("Sentence " ++ progress) ]
         , div [ Attr.class "flex flex-wrap items-center justify-center gap-2 min-h-[4rem] p-6 rounded-xl bg-slate-800/50 w-full" ]
             [ span [ Attr.class "text-lg text-white font-medium text-center" ]
-                [ text item.prompt ]
+                (Prompt.viewPrompt item.prompt)
             ]
         , p [ Attr.class "text-slate-400 text-sm" ]
             [ text "Translate this sentence into English (check the timeline for the correct tense)" ]
@@ -696,7 +697,8 @@ viewTranslationInteraction config item state ts =
     in
     div [ Attr.class "flex flex-col items-center gap-3 w-full" ]
         [ Html.input
-            [ Attr.class "w-full max-w-lg bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500"
+            [ Attr.id "translation-input"
+            , Attr.class "w-full max-w-lg bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500"
             , Attr.placeholder "Type your English translation..."
             , Attr.value currentInput
             , Attr.disabled hasEvaluation

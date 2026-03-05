@@ -21,6 +21,24 @@ type ApiError
 -- =========================================================
 
 
+promptFieldInstruction : String
+promptFieldInstruction =
+    """For each sentence, provide a "prompt" field following these rules:
+- Start from the original sentence.
+- REMOVE all auxiliary/helper verbs (e.g. haber, estar, ser, ir a, will, would, shall, have, has, had, be, been, being, am, is, are, was, were). Keep ONLY the main verb.
+- Replace the main verb with its base/dictionary form (infinitive) in the original language.
+- Wrap every verb infinitive in double square brackets, like [[verb]].
+- If the subject is implicit or pro-dropped, add it explicitly before the verb.
+- Do NOT include any auxiliary verbs in the prompt — only the main verb infinitive in brackets.
+
+Examples (Spanish):
+  Original: "Hoy he comido manzanas" → prompt: "Hoy [[comer]] manzanas"
+  Original: "Estaba lloviendo cuando salí" → prompt: "[[Llover]] cuando [[salir]]"
+  Original: "Iré al parque mañana" → prompt: "Yo [[ir]] al parque mañana"
+  Original: "Habían estado esperando" → prompt: "Ellos [[esperar]]"
+"""
+
+
 analyzeSystemPrompt : String
 analyzeSystemPrompt =
     """You are a language analysis assistant. The user will provide a short narrative written in a non-English language (such as Spanish, French, Japanese, etc.).
@@ -35,8 +53,9 @@ SimplePast, PastContinuous, PastPerfect, PastPerfectContinuous,
 SimplePresent, PresentContinuous, PresentPerfect, PresentPerfectContinuous,
 SimpleFuture, FutureContinuous, FuturePerfect, FuturePerfectContinuous
 
-For each sentence, also provide a "prompt" field: the same sentence but with the main verb replaced by its base/dictionary form (infinitive) in the original language.
-
+"""
+        ++ promptFieldInstruction
+        ++ """
 Respond with a JSON object containing a "sentences" array."""
 
 
@@ -60,7 +79,9 @@ buildGenerateSystemPrompt topic tenses =
         ++ String.fromInt (min tenseCount 4)
         ++ " different tenses.\n\nAfter writing the story, analyze each sentence and determine the primary English verb tense that would be used to translate it.\n\nThe verb tense MUST be one of these exact values:\n"
         ++ tenseEnums
-        ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\nFor each sentence, also provide a \"prompt\" field: the same sentence but with the main verb replaced by its base/dictionary form (infinitive) in the original language.\n\nRespond with a JSON object containing a \"sentences\" array. The array MUST have at most 10 items."
+        ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\n"
+        ++ promptFieldInstruction
+        ++ "\nRespond with a JSON object containing a \"sentences\" array. The array MUST have at most 10 items."
 
 
 evaluationSystemPrompt : String

@@ -5,6 +5,7 @@ import Animator.Inline
 import Api
 import Array
 import Browser
+import Browser.Dom
 import Browser.Events
 import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExerciseKind(..), ExercisePhase(..), ExerciseState, ExerciseTypeChoice(..), StoryTopic(..), TranslationEvaluation(..), allItemsAnswered, clearSelectedTense, currentItem, getSelectedTense, goToItem, initTenseIdExercise, initTranslationExercise, isItemAnswered, isLastItem, recordTenseAnswer, recordTranslationEvaluation, selectTense, setTranslationEvaluating, storyTopics, updateTranslationInput)
 import Exercise.View exposing (viewExercise)
@@ -18,6 +19,7 @@ import Html.Events as Events
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Story exposing (SavedStory, StoryMode(..), buildSavedStory, decodeSavedStories, encodeSavedStories)
+import Task
 import Time
 import Timeline
 
@@ -199,6 +201,7 @@ type Msg
     | ToggleTenseColumn Tense
     | ToggleTenseRow Aspect
     | KeyPressed String
+    | NoOp
 
 
 
@@ -431,7 +434,10 @@ handleLLMSuccess items mode model =
             , exerciseTenseTimeline = Animator.init spec.tense
             , savedStories = newStories
           }
-        , saveStories (encodeSavedStories newStories)
+        , Cmd.batch
+            [ saveStories (encodeSavedStories newStories)
+            , focusTranslationInput exState
+            ]
         )
 
 
@@ -842,7 +848,7 @@ update msg model =
                         , feedbackTimeline = newFeedbackTl
                         , exerciseTenseTimeline = newExTenseTl
                       }
-                    , Cmd.none
+                    , focusTranslationInput newState
                     )
 
                 Nothing ->
@@ -866,7 +872,7 @@ update msg model =
                         , feedbackTimeline = newFeedbackTl
                         , exerciseTenseTimeline = newExTenseTl
                       }
-                    , Cmd.none
+                    , focusTranslationInput newState
                     )
 
                 Nothing ->
@@ -972,7 +978,7 @@ update msg model =
                 , llmLoading = False
                 , llmError = Nothing
               }
-            , Cmd.none
+            , focusTranslationInput exState
             )
 
         DeleteSavedStory storyId ->
@@ -1153,11 +1159,40 @@ update msg model =
                                 "ArrowLeft" ->
                                     update PrevExerciseItem model
 
+                                "Enter" ->
+                                    if isItemAnswered state.currentIndex state then
+                                        if isLastItem state && allItemsAnswered state then
+                                            update FinishExercise model
+
+                                        else
+                                            update NextExerciseItem model
+
+                                    else
+                                        ( model, Cmd.none )
+
                                 _ ->
                                     ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
+
+        NoOp ->
+            ( model, Cmd.none )
+
+
+focusTranslationInput : ExerciseState -> Cmd Msg
+focusTranslationInput state =
+    case state.kind of
+        Translation _ ->
+            if not (isItemAnswered state.currentIndex state) then
+                Browser.Dom.focus "translation-input"
+                    |> Task.attempt (\_ -> NoOp)
+
+            else
+                Cmd.none
+
+        _ ->
+            Cmd.none
 
 
 togglePerfect : Model -> Model
