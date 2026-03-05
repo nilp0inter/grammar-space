@@ -1,4 +1,4 @@
-module Api exposing (ApiError(..), LLMModel, analyzeNarrative, errorToString, fetchModels, generateStory)
+module Api exposing (ApiError(..), EvaluationResult, LLMModel, analyzeNarrative, errorToString, evaluateTranslation, fetchModels, generateStory)
 
 import Exercise.Types exposing (ExerciseItem)
 import Grammar.Types exposing (VerbTense, verbTenseFromString)
@@ -54,6 +54,25 @@ SimpleFuture, FutureContinuous, FuturePerfect, FuturePerfectContinuous
 The "explanation" field should be a brief English explanation (1 sentence) of why that tense applies.
 
 Respond with a JSON object containing a "sentences" array. The array MUST have at most 10 items."""
+
+
+evaluationSystemPrompt : String
+evaluationSystemPrompt =
+    """You are a language teaching assistant evaluating a student's English translation.
+
+You will receive:
+- The original sentence in a non-English language
+- The expected English verb tense (e.g. "Simple Past", "Present Perfect")
+- The student's English translation
+
+Evaluate the translation as follows:
+- "perfect": The translation is accurate, uses the correct verb tense, and reads naturally.
+- "good": The translation captures the meaning and uses an acceptable verb tense, but has minor issues (e.g. slightly awkward phrasing, minor vocabulary choice).
+- "wrong": The translation uses the wrong verb tense, significantly misses the meaning, or is incomprehensible.
+
+Provide a brief explanation (1-2 sentences) of your rating.
+
+Respond with a JSON object containing "rating" and "explanation"."""
 
 
 
@@ -267,6 +286,90 @@ handleApiResponse response =
                             Err (BadResponse ("Failed to parse response: " ++ Decode.errorToString decodeErr))
 
 
+type alias EvaluationResult =
+    { rating : String
+    , explanation : String
+    }
+
+
+evaluationResponseSchema : Encode.Value
+evaluationResponseSchema =
+    Encode.object
+        [ ( "type", Encode.string "json_schema" )
+        , ( "json_schema"
+          , Encode.object
+                [ ( "name", Encode.string "translation_evaluation" )
+                , ( "strict", Encode.bool True )
+                , ( "schema"
+                  , Encode.object
+                        [ ( "type", Encode.string "object" )
+                        , ( "properties"
+                          , Encode.object
+                                [ ( "rating"
+                                  , Encode.object
+                                        [ ( "type", Encode.string "string" )
+                                        , ( "enum", Encode.list Encode.string [ "wrong", "good", "perfect" ] )
+                                        ]
+                                  )
+                                , ( "explanation", Encode.object [ ( "type", Encode.string "string" ) ] )
+                                ]
+                          )
+                        , ( "required", Encode.list Encode.string [ "rating", "explanation" ] )
+                        , ( "additionalProperties", Encode.bool False )
+                        ]
+                  )
+                ]
+          )
+        ]
+
+
+decodeEvaluationResult : Decode.Decoder EvaluationResult
+decodeEvaluationResult =
+    Decode.map2 EvaluationResult
+        (Decode.field "rating" Decode.string)
+        (Decode.field "explanation" Decode.string)
+
+
+handleEvaluationResponse : Http.Response String -> Result ApiError EvaluationResult
+handleEvaluationResponse response =
+    case response of
+        Http.BadUrl_ url ->
+            Err (NetworkError ("Bad URL: " ++ url))
+
+        Http.Timeout_ ->
+            Err (NetworkError "Request timed out")
+
+        Http.NetworkError_ ->
+            Err (NetworkError "Network error. Please check your connection.")
+
+        Http.BadStatus_ metadata _ ->
+            case metadata.statusCode of
+                401 ->
+                    Err Unauthorized
+
+                402 ->
+                    Err InsufficientCredits
+
+                429 ->
+                    Err RateLimited
+
+                code ->
+                    Err (BadResponse ("API error: " ++ String.fromInt code))
+
+        Http.GoodStatus_ _ body ->
+            case Decode.decodeString decodeOpenRouterContent body of
+                Err _ ->
+                    Err (BadResponse "No content in API response.")
+
+                Ok contentStr ->
+                    case Decode.decodeString decodeEvaluationResult contentStr of
+                        Ok result ->
+                            Ok result
+
+                        Err decodeErr ->
+                            Err (BadResponse ("Failed to parse evaluation: " ++ Decode.errorToString decodeErr))
+
+
 
 -- =========================================================
 -- HTTP Functions
@@ -324,6 +427,44 @@ generateStory { apiKey, language, model, onResult } =
                     ]
                 )
         , expect = Http.expectStringResponse onResult handleApiResponse
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+evaluateTranslation :
+    { apiKey : String
+    , model : String
+    , originalSentence : String
+    , expectedTense : String
+    , studentTranslation : String
+    , onResult : Result ApiError EvaluationResult -> msg
+    }
+    -> Cmd msg
+evaluateTranslation { apiKey, model, originalSentence, expectedTense, studentTranslation, onResult } =
+    let
+        userMessage =
+            "Original sentence: " ++ originalSentence ++ "\nExpected English verb tense: " ++ expectedTense ++ "\nStudent's translation: " ++ studentTranslation
+    in
+    Http.request
+        { method = "POST"
+        , headers = openRouterHeaders apiKey
+        , url = "https://openrouter.ai/api/v1/chat/completions"
+        , body =
+            Http.jsonBody
+                (Encode.object
+                    [ ( "model", Encode.string model )
+                    , ( "messages"
+                      , Encode.list identity
+                            [ Encode.object [ ( "role", Encode.string "system" ), ( "content", Encode.string evaluationSystemPrompt ) ]
+                            , Encode.object [ ( "role", Encode.string "user" ), ( "content", Encode.string userMessage ) ]
+                            ]
+                      )
+                    , ( "response_format", evaluationResponseSchema )
+                    , ( "temperature", Encode.float 0.2 )
+                    ]
+                )
+        , expect = Http.expectStringResponse onResult handleEvaluationResponse
         , timeout = Nothing
         , tracker = Nothing
         }
