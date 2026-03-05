@@ -11,6 +11,7 @@ import Html exposing (Html, div, h1, p, span, text)
 import Html.Attributes as Attr
 import Html.Events as Events
 import Time
+import Timeline
 
 
 
@@ -45,6 +46,7 @@ type alias Model =
     , selectedSubjectIdx : Int
     , selectedVerbIdx : Int
     , sentenceTimeline : Animator.Timeline SentencePhase
+    , tenseTimeline : Animator.Timeline Tense
     , result : Result String (List SentenceWord)
     }
 
@@ -88,6 +90,10 @@ animator =
         |> Animator.watchingWith
             .sentenceTimeline
             (\newTl model -> { model | sentenceTimeline = newTl })
+            (always False)
+        |> Animator.watchingWith
+            .tenseTimeline
+            (\newTl model -> { model | tenseTimeline = newTl })
             (always False)
 
 
@@ -147,6 +153,7 @@ init _ =
             , selectedSubjectIdx = 0
             , selectedVerbIdx = 0
             , sentenceTimeline = Animator.init Visible
+            , tenseTimeline = Animator.init Present
             , result = Ok []
             }
     in
@@ -214,8 +221,12 @@ update msg model =
             let
                 fs =
                     model.finiteSpec
+
+                newTenseTimeline =
+                    model.tenseTimeline
+                        |> Animator.go (Animator.millis 400) t
             in
-            ( recompute { model | finiteSpec = { fs | fsTense = t } }, Cmd.none )
+            ( recompute { model | finiteSpec = { fs | fsTense = t }, tenseTimeline = newTenseTimeline }, Cmd.none )
 
         SetModal m ->
             let
@@ -502,12 +513,30 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div [ Attr.class "flex flex-col items-center min-h-screen py-10 px-4 gap-8 max-w-4xl mx-auto" ]
-        [ viewTitle
-        , viewSentence model
-        , viewError model
-        , viewLegend
-        , viewControlPanel model
-        ]
+        ([ viewTitle
+         , viewSentence model
+         , viewError model
+         ]
+            ++ (if model.clauseMode == FiniteMode then
+                    [ Timeline.view
+                        { tenseTimeline = model.tenseTimeline
+                        , tense = model.finiteSpec.fsTense
+                        , perfect = model.finiteSpec.fsPerfect
+                        , progressive = model.finiteSpec.fsProgressive
+                        , voice = model.finiteSpec.fsVoice
+                        , polarity = model.finiteSpec.fsPolarity
+                        , modal = model.finiteSpec.fsModal
+                        , onSetTense = SetTense
+                        }
+                    ]
+
+                else
+                    []
+               )
+            ++ [ viewLegend
+               , viewControlPanel model
+               ]
+        )
 
 
 viewTitle : Html Msg
