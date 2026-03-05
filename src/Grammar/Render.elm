@@ -1,16 +1,16 @@
 module Grammar.Render exposing
-    ( renderFinite
-    , renderFiniteWords
+    ( compWord
+    , relWord
     , renderEmbedded
     , renderEmbeddedWords
-    , renderRelative
-    , renderRelativeWords
+    , renderFinite
+    , renderFiniteWords
     , renderImperative
     , renderImperativeWords
     , renderNonFinite
     , renderNonFiniteWords
-    , compWord
-    , relWord
+    , renderRelative
+    , renderRelativeWords
     , tagPronoun
     )
 

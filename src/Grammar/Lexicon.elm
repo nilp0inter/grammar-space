@@ -1,9 +1,9 @@
 module Grammar.Lexicon exposing
-    ( verbs
-    , subjects
-    , defaultArguments
-    , verbLabel
+    ( defaultArguments
     , subjectLabel
+    , subjects
+    , verbLabel
+    , verbs
     )
 
 import Grammar.Engine exposing (nullArgs)

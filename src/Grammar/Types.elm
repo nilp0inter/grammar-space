@@ -204,3 +204,159 @@ type alias SentenceWord =
     { text : String
     , role : WordRole
     }
+
+
+
+-- Verb Tense (12 combinations of Tense × Aspect)
+
+
+type VerbTense
+    = SimplePast
+    | PastContinuous
+    | PastPerfect
+    | PastPerfectContinuous
+    | SimplePresent
+    | PresentContinuous
+    | PresentPerfect
+    | PresentPerfectContinuous
+    | SimpleFuture
+    | FutureContinuous
+    | FuturePerfect
+    | FuturePerfectContinuous
+
+
+allVerbTenses : List VerbTense
+allVerbTenses =
+    [ SimplePast
+    , PastContinuous
+    , PastPerfect
+    , PastPerfectContinuous
+    , SimplePresent
+    , PresentContinuous
+    , PresentPerfect
+    , PresentPerfectContinuous
+    , SimpleFuture
+    , FutureContinuous
+    , FuturePerfect
+    , FuturePerfectContinuous
+    ]
+
+
+verbTenseToSpec : VerbTense -> { tense : Tense, perfect : Bool, progressive : Bool }
+verbTenseToSpec vt =
+    case vt of
+        SimplePast ->
+            { tense = Past, perfect = False, progressive = False }
+
+        PastContinuous ->
+            { tense = Past, perfect = False, progressive = True }
+
+        PastPerfect ->
+            { tense = Past, perfect = True, progressive = False }
+
+        PastPerfectContinuous ->
+            { tense = Past, perfect = True, progressive = True }
+
+        SimplePresent ->
+            { tense = Present, perfect = False, progressive = False }
+
+        PresentContinuous ->
+            { tense = Present, perfect = False, progressive = True }
+
+        PresentPerfect ->
+            { tense = Present, perfect = True, progressive = False }
+
+        PresentPerfectContinuous ->
+            { tense = Present, perfect = True, progressive = True }
+
+        SimpleFuture ->
+            { tense = Future, perfect = False, progressive = False }
+
+        FutureContinuous ->
+            { tense = Future, perfect = False, progressive = True }
+
+        FuturePerfect ->
+            { tense = Future, perfect = True, progressive = False }
+
+        FuturePerfectContinuous ->
+            { tense = Future, perfect = True, progressive = True }
+
+
+specToVerbTense : Tense -> Bool -> Bool -> VerbTense
+specToVerbTense tense perfect progressive =
+    case ( tense, perfect, progressive ) of
+        ( Past, False, False ) ->
+            SimplePast
+
+        ( Past, False, True ) ->
+            PastContinuous
+
+        ( Past, True, False ) ->
+            PastPerfect
+
+        ( Past, True, True ) ->
+            PastPerfectContinuous
+
+        ( Present, False, False ) ->
+            SimplePresent
+
+        ( Present, False, True ) ->
+            PresentContinuous
+
+        ( Present, True, False ) ->
+            PresentPerfect
+
+        ( Present, True, True ) ->
+            PresentPerfectContinuous
+
+        ( Future, False, False ) ->
+            SimpleFuture
+
+        ( Future, False, True ) ->
+            FutureContinuous
+
+        ( Future, True, False ) ->
+            FuturePerfect
+
+        ( Future, True, True ) ->
+            FuturePerfectContinuous
+
+
+verbTenseLabel : VerbTense -> String
+verbTenseLabel vt =
+    case vt of
+        SimplePast ->
+            "Simple Past"
+
+        PastContinuous ->
+            "Past Continuous"
+
+        PastPerfect ->
+            "Past Perfect"
+
+        PastPerfectContinuous ->
+            "Past Perfect Continuous"
+
+        SimplePresent ->
+            "Simple Present"
+
+        PresentContinuous ->
+            "Present Continuous"
+
+        PresentPerfect ->
+            "Present Perfect"
+
+        PresentPerfectContinuous ->
+            "Present Perfect Continuous"
+
+        SimpleFuture ->
+            "Simple Future"
+
+        FutureContinuous ->
+            "Future Continuous"
+
+        FuturePerfect ->
+            "Future Perfect"
+
+        FuturePerfectContinuous ->
+            "Future Perfect Continuous"

@@ -1,24 +1,24 @@
 module Grammar.Engine exposing
-    ( agreeNP
-    , is3sg
-    , modalWord
+    ( activeComps
+    , agreeNP
+    , allAuxFinite
+    , buildClauseParts
+    , contract
+    , finiteBe
     , finiteDo
     , finiteHave
-    , finiteBe
     , finiteLex
-    , allAuxFinite
-    , realizeFirstAux
-    , linkForm
-    , mainForm
-    , contract
-    , negateFirst
+    , is3sg
     , isInvertingClause
     , isObjectGapClause
-    , activeComps
-    , passiveComps
-    , buildClauseParts
-    , nullArgs
+    , linkForm
+    , mainForm
     , maybeToList
+    , modalWord
+    , negateFirst
+    , nullArgs
+    , passiveComps
+    , realizeFirstAux
     )
 
 import Grammar.Types exposing (..)
@@ -550,7 +550,7 @@ buildParts style subj v args s objGap =
                         [] ->
                             finiteLex s.fsTense npSubj v
 
-                        (ADo :: _) ->
+                        ADo :: _ ->
                             v.vBase
 
                         _ ->

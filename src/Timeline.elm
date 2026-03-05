@@ -1,7 +1,7 @@
 module Timeline exposing (view)
 
 import Animator
-import Grammar.Types exposing (Modality(..), Polarity(..), Tense(..), Voice(..))
+import Grammar.Types exposing (Modality(..), Polarity(..), Tense(..), VerbTense(..), Voice(..), specToVerbTense, verbTenseLabel, verbTenseToSpec)
 import Html exposing (Html)
 import Html.Attributes
 import Svg exposing (svg)
@@ -17,7 +17,7 @@ type alias Config msg =
     , voice : Voice
     , polarity : Polarity
     , modal : Maybe Modality
-    , onSetTense : Tense -> msg
+    , onSelectVerbTense : VerbTense -> msg
     }
 
 
@@ -42,7 +42,7 @@ futureX =
 
 axisY : Float
 axisY =
-    110
+    200
 
 
 tenseToX : Tense -> Float
@@ -56,6 +56,30 @@ tenseToX tense =
 
         Future ->
             futureX
+
+
+
+-- Row Y positions (4 aspect rows above the axis)
+
+
+simpleY : Float
+simpleY =
+    170
+
+
+continuousY : Float
+continuousY =
+    130
+
+
+perfectY : Float
+perfectY =
+    90
+
+
+perfectContinuousY : Float
+perfectContinuousY =
+    50
 
 
 
@@ -87,8 +111,18 @@ emeraldFillAlpha =
     "rgba(52, 211, 153, 0.4)"
 
 
-selectedZoneFill : String
-selectedZoneFill =
+dimColor : String
+dimColor =
+    "#4a5568"
+
+
+dimOpacity : String
+dimOpacity =
+    "0.5"
+
+
+selectedHighlightFill : String
+selectedHighlightFill =
     "rgba(99, 102, 241, 0.12)"
 
 
@@ -104,263 +138,215 @@ view config =
                 (\tense ->
                     Animator.at (tenseToX tense)
                 )
+
+        selectedVT =
+            specToVerbTense config.tense config.perfect config.progressive
     in
     Html.div [ Html.Attributes.class "w-full flex justify-center" ]
         [ svg
-            [ SA.viewBox "0 0 700 180"
+            [ SA.viewBox "0 0 700 320"
             , SA.width "700"
             , SA.class "max-w-full h-auto"
             , SA.style "user-select: none"
             ]
-            [ viewSelectedZone config.tense
-            , viewClickableZones config
+            [ viewRowLabels
+            , viewAllIndicators selectedVT config
             , viewAxis
             , viewTickMarks
             , viewLabels
             , viewNowLine
-            , viewAspectShape arrowX config.perfect config.progressive
             , viewArrow arrowX
+            , viewTenseNameLabel arrowX selectedVT
             , viewBadges arrowX config.voice config.polarity config.modal
             ]
         ]
 
 
 
--- Selected zone highlight
+-- Row labels on left side
 
 
-viewSelectedZone : Tense -> Svg.Svg msg
-viewSelectedZone tense =
-    let
-        zoneX =
-            case tense of
-                Past ->
-                    17
-
-                Present ->
-                    234
-
-                Future ->
-                    450
-
-        zoneW =
-            case tense of
-                Past ->
-                    216
-
-                Present ->
-                    216
-
-                Future ->
-                    233
-    in
-    Svg.rect
-        [ SA.x (String.fromFloat zoneX)
-        , SA.y "20"
-        , SA.width (String.fromFloat zoneW)
-        , SA.height "130"
-        , SA.rx "8"
-        , SA.fill selectedZoneFill
-        ]
-        []
-
-
-
--- Clickable zones
-
-
-viewClickableZones : Config msg -> Svg.Svg msg
-viewClickableZones config =
-    Svg.g []
-        [ clickableZone 17 216 (config.onSetTense Past)
-        , clickableZone 234 216 (config.onSetTense Present)
-        , clickableZone 450 233 (config.onSetTense Future)
-        ]
-
-
-clickableZone : Float -> Float -> msg -> Svg.Svg msg
-clickableZone x w msg =
-    Svg.rect
-        [ SA.x (String.fromFloat x)
-        , SA.y "20"
-        , SA.width (String.fromFloat w)
-        , SA.height "130"
-        , SA.fill "transparent"
-        , SA.cursor "pointer"
-        , SE.onClick msg
-        ]
-        []
-
-
-
--- Axis line
-
-
-viewAxis : Svg.Svg msg
-viewAxis =
-    Svg.line
-        [ SA.x1 "50"
-        , SA.y1 (String.fromFloat axisY)
-        , SA.x2 "650"
-        , SA.y2 (String.fromFloat axisY)
-        , SA.stroke slateAxis
-        , SA.strokeWidth "2"
-        ]
-        []
-
-
-
--- Tick marks
-
-
-viewTickMarks : Svg.Svg msg
-viewTickMarks =
-    Svg.g []
-        [ tickMark pastX
-        , tickMark presentX
-        , tickMark futureX
-        ]
-
-
-tickMark : Float -> Svg.Svg msg
-tickMark x =
-    Svg.line
-        [ SA.x1 (String.fromFloat x)
-        , SA.y1 (String.fromFloat (axisY - 8))
-        , SA.x2 (String.fromFloat x)
-        , SA.y2 (String.fromFloat (axisY + 8))
-        , SA.stroke slateAxis
-        , SA.strokeWidth "2"
-        ]
-        []
-
-
-
--- Labels
-
-
-viewLabels : Svg.Svg msg
-viewLabels =
+viewRowLabels : Svg.Svg msg
+viewRowLabels =
     Svg.g
         [ SA.fontFamily "system-ui, sans-serif"
-        , SA.fontSize "13"
+        , SA.fontSize "10"
         , SA.fontWeight "600"
-        , SA.textAnchor "middle"
+        , SA.textAnchor "end"
+        , SA.fill slateLabel
         ]
         [ Svg.text_
-            [ SA.x (String.fromFloat pastX)
-            , SA.y "38"
-            , SA.fill slateLabel
+            [ SA.x "65"
+            , SA.y (ff (simpleY + 4))
             ]
-            [ Svg.text "PAST" ]
+            [ Svg.text "SIMPLE" ]
         , Svg.text_
-            [ SA.x (String.fromFloat presentX)
-            , SA.y "38"
-            , SA.fill indigoAccent
+            [ SA.x "65"
+            , SA.y (ff (continuousY + 4))
             ]
-            [ Svg.text "NOW" ]
+            [ Svg.text "CONTINUOUS" ]
         , Svg.text_
-            [ SA.x (String.fromFloat futureX)
-            , SA.y "38"
-            , SA.fill slateLabel
+            [ SA.x "65"
+            , SA.y (ff (perfectY + 4))
             ]
-            [ Svg.text "FUTURE" ]
+            [ Svg.text "PERFECT" ]
+        , Svg.text_
+            [ SA.x "65"
+            , SA.y (ff (perfectContinuousY + 4))
+            ]
+            [ Svg.text "PERF. CONT." ]
         ]
 
 
 
--- NOW dashed line
+-- All 12 indicators
 
 
-viewNowLine : Svg.Svg msg
-viewNowLine =
-    Svg.line
-        [ SA.x1 (String.fromFloat presentX)
-        , SA.y1 "44"
-        , SA.x2 (String.fromFloat presentX)
-        , SA.y2 (String.fromFloat (axisY - 10))
-        , SA.stroke indigoAccent
-        , SA.strokeWidth "1"
-        , SA.strokeDasharray "4 3"
-        , SA.opacity "0.5"
-        ]
-        []
+viewAllIndicators : VerbTense -> Config msg -> Svg.Svg msg
+viewAllIndicators selectedVT config =
+    Svg.g []
+        (List.map
+            (\vt ->
+                let
+                    spec =
+                        verbTenseToSpec vt
+
+                    x =
+                        tenseToX spec.tense
+
+                    y =
+                        aspectToY spec.perfect spec.progressive
+
+                    isSelected =
+                        vt == selectedVT
+                in
+                viewIndicator x y isSelected vt spec.perfect spec.progressive config
+            )
+            allVerbTensesList
+        )
 
 
-
--- Arrow pointer
-
-
-viewArrow : Float -> Svg.Svg msg
-viewArrow arrowX =
-    let
-        tipY =
-            axisY + 14
-
-        baseY =
-            axisY + 28
-
-        halfW =
-            8
-
-        points =
-            String.fromFloat arrowX
-                ++ ","
-                ++ String.fromFloat tipY
-                ++ " "
-                ++ String.fromFloat (arrowX - halfW)
-                ++ ","
-                ++ String.fromFloat baseY
-                ++ " "
-                ++ String.fromFloat (arrowX + halfW)
-                ++ ","
-                ++ String.fromFloat baseY
-    in
-    Svg.polygon
-        [ SA.points points
-        , SA.fill indigoAccent
-        ]
-        []
+allVerbTensesList : List VerbTense
+allVerbTensesList =
+    [ SimplePast
+    , PastContinuous
+    , PastPerfect
+    , PastPerfectContinuous
+    , SimplePresent
+    , PresentContinuous
+    , PresentPerfect
+    , PresentPerfectContinuous
+    , SimpleFuture
+    , FutureContinuous
+    , FuturePerfect
+    , FuturePerfectContinuous
+    ]
 
 
-
--- Aspect shapes (drawn above the axis)
-
-
-viewAspectShape : Float -> Bool -> Bool -> Svg.Svg msg
-viewAspectShape arrowX perfect progressive =
-    let
-        shapeY =
-            axisY - 30
-
-        centerX =
-            arrowX
-    in
+aspectToY : Bool -> Bool -> Float
+aspectToY perfect progressive =
     case ( perfect, progressive ) of
         ( False, False ) ->
-            viewSimpleDot centerX shapeY
+            simpleY
 
         ( False, True ) ->
-            viewProgressiveBar centerX shapeY
+            continuousY
 
         ( True, False ) ->
-            viewPerfectShape centerX shapeY
+            perfectY
 
         ( True, True ) ->
-            viewPerfectProgressiveShape centerX shapeY
+            perfectContinuousY
+
+
+
+-- Single indicator (shape + highlight + hitbox)
+
+
+viewIndicator : Float -> Float -> Bool -> VerbTense -> Bool -> Bool -> Config msg -> Svg.Svg msg
+viewIndicator x y isSelected vt perfect progressive config =
+    let
+        fillColor =
+            if isSelected then
+                emeraldFill
+
+            else
+                dimColor
+
+        fillAlpha =
+            if isSelected then
+                emeraldFillAlpha
+
+            else
+                "rgba(74, 85, 104, 0.25)"
+
+        groupOpacity =
+            if isSelected then
+                "1"
+
+            else
+                dimOpacity
+    in
+    Svg.g []
+        [ if isSelected then
+            Svg.rect
+                [ SA.x (ff (x - 40))
+                , SA.y (ff (y - 15))
+                , SA.width "80"
+                , SA.height "30"
+                , SA.rx "6"
+                , SA.fill selectedHighlightFill
+                ]
+                []
+
+          else
+            Svg.g [] []
+        , Svg.g [ SA.opacity groupOpacity ]
+            [ viewIndicatorShape x y fillColor fillAlpha perfect progressive ]
+        , Svg.rect
+            [ SA.x (ff (x - 40))
+            , SA.y (ff (y - 15))
+            , SA.width "80"
+            , SA.height "30"
+            , SA.fill "transparent"
+            , SA.cursor "pointer"
+            , SE.onClick (config.onSelectVerbTense vt)
+            ]
+            []
+        ]
+
+
+
+-- Indicator shape based on aspect
+
+
+viewIndicatorShape : Float -> Float -> String -> String -> Bool -> Bool -> Svg.Svg msg
+viewIndicatorShape cx cy color colorAlpha perfect progressive =
+    case ( perfect, progressive ) of
+        ( False, False ) ->
+            viewSimpleDot cx cy color
+
+        ( False, True ) ->
+            viewProgressiveBar cx cy color colorAlpha
+
+        ( True, False ) ->
+            viewPerfectShape cx cy color
+
+        ( True, True ) ->
+            viewPerfectProgressiveShape cx cy color colorAlpha
 
 
 
 -- Simple: filled circle (point event)
 
 
-viewSimpleDot : Float -> Float -> Svg.Svg msg
-viewSimpleDot cx cy =
+viewSimpleDot : Float -> Float -> String -> Svg.Svg msg
+viewSimpleDot cx cy color =
     Svg.circle
-        [ SA.cx (String.fromFloat cx)
-        , SA.cy (String.fromFloat cy)
+        [ SA.cx (ff cx)
+        , SA.cy (ff cy)
         , SA.r "8"
-        , SA.fill emeraldFill
+        , SA.fill color
         ]
         []
 
@@ -369,8 +355,8 @@ viewSimpleDot cx cy =
 -- Progressive: elongated rounded bar with wavy interior
 
 
-viewProgressiveBar : Float -> Float -> Svg.Svg msg
-viewProgressiveBar cx cy =
+viewProgressiveBar : Float -> Float -> String -> String -> Svg.Svg msg
+viewProgressiveBar cx cy color colorAlpha =
     let
         barW =
             60
@@ -384,24 +370,24 @@ viewProgressiveBar cx cy =
         y =
             cy - barH / 2
 
-        waveY =
+        waveYpos =
             cy
     in
     Svg.g []
         [ Svg.rect
-            [ SA.x (String.fromFloat x)
-            , SA.y (String.fromFloat y)
-            , SA.width (String.fromFloat barW)
-            , SA.height (String.fromFloat barH)
+            [ SA.x (ff x)
+            , SA.y (ff y)
+            , SA.width (ff barW)
+            , SA.height (ff barH)
             , SA.rx "8"
-            , SA.fill emeraldFillAlpha
-            , SA.stroke emeraldFill
+            , SA.fill colorAlpha
+            , SA.stroke color
             , SA.strokeWidth "1.5"
             ]
             []
         , Svg.path
-            [ SA.d (wavePath (x + 8) waveY (barW - 16) 3 4)
-            , SA.stroke emeraldFill
+            [ SA.d (wavePath (x + 8) waveYpos (barW - 16) 3 4)
+            , SA.stroke color
             , SA.strokeWidth "1.5"
             , SA.fill "none"
             , SA.strokeLinecap "round"
@@ -414,27 +400,27 @@ viewProgressiveBar cx cy =
 -- Perfect: line ending at a filled circle
 
 
-viewPerfectShape : Float -> Float -> Svg.Svg msg
-viewPerfectShape cx cy =
+viewPerfectShape : Float -> Float -> String -> Svg.Svg msg
+viewPerfectShape cx cy color =
     let
         lineLen =
             30
     in
     Svg.g []
         [ Svg.line
-            [ SA.x1 (String.fromFloat (cx - lineLen))
-            , SA.y1 (String.fromFloat cy)
-            , SA.x2 (String.fromFloat cx)
-            , SA.y2 (String.fromFloat cy)
-            , SA.stroke emeraldFill
+            [ SA.x1 (ff (cx - lineLen))
+            , SA.y1 (ff cy)
+            , SA.x2 (ff cx)
+            , SA.y2 (ff cy)
+            , SA.stroke color
             , SA.strokeWidth "2"
             ]
             []
         , Svg.circle
-            [ SA.cx (String.fromFloat cx)
-            , SA.cy (String.fromFloat cy)
+            [ SA.cx (ff cx)
+            , SA.cy (ff cy)
             , SA.r "6"
-            , SA.fill emeraldFill
+            , SA.fill color
             ]
             []
         ]
@@ -444,8 +430,8 @@ viewPerfectShape cx cy =
 -- Perfect Progressive: rounded bar ending at a circle
 
 
-viewPerfectProgressiveShape : Float -> Float -> Svg.Svg msg
-viewPerfectProgressiveShape cx cy =
+viewPerfectProgressiveShape : Float -> Float -> String -> String -> Svg.Svg msg
+viewPerfectProgressiveShape cx cy color colorAlpha =
     let
         barW =
             50
@@ -459,42 +445,42 @@ viewPerfectProgressiveShape cx cy =
         y =
             cy - barH / 2
 
-        waveY =
+        waveYpos =
             cy
     in
     Svg.g []
         [ Svg.rect
-            [ SA.x (String.fromFloat barX)
-            , SA.y (String.fromFloat y)
-            , SA.width (String.fromFloat barW)
-            , SA.height (String.fromFloat barH)
+            [ SA.x (ff barX)
+            , SA.y (ff y)
+            , SA.width (ff barW)
+            , SA.height (ff barH)
             , SA.rx "8"
-            , SA.fill emeraldFillAlpha
-            , SA.stroke emeraldFill
+            , SA.fill colorAlpha
+            , SA.stroke color
             , SA.strokeWidth "1.5"
             ]
             []
         , Svg.path
-            [ SA.d (wavePath (barX + 8) waveY (barW - 16) 3 4)
-            , SA.stroke emeraldFill
+            [ SA.d (wavePath (barX + 8) waveYpos (barW - 16) 3 4)
+            , SA.stroke color
             , SA.strokeWidth "1.5"
             , SA.fill "none"
             , SA.strokeLinecap "round"
             ]
             []
         , Svg.circle
-            [ SA.cx (String.fromFloat (cx + 4))
-            , SA.cy (String.fromFloat cy)
+            [ SA.cx (ff (cx + 4))
+            , SA.cy (ff cy)
             , SA.r "6"
-            , SA.fill emeraldFill
+            , SA.fill color
             ]
             []
         , Svg.line
-            [ SA.x1 (String.fromFloat (barX + barW))
-            , SA.y1 (String.fromFloat cy)
-            , SA.x2 (String.fromFloat (cx + 4 - 6))
-            , SA.y2 (String.fromFloat cy)
-            , SA.stroke emeraldFill
+            [ SA.x1 (ff (barX + barW))
+            , SA.y1 (ff cy)
+            , SA.x2 (ff (cx + 4 - 6))
+            , SA.y2 (ff cy)
+            , SA.stroke color
             , SA.strokeWidth "2"
             ]
             []
@@ -550,14 +536,163 @@ ff =
 
 
 
+-- Axis line
+
+
+viewAxis : Svg.Svg msg
+viewAxis =
+    Svg.line
+        [ SA.x1 "50"
+        , SA.y1 (ff axisY)
+        , SA.x2 "650"
+        , SA.y2 (ff axisY)
+        , SA.stroke slateAxis
+        , SA.strokeWidth "2"
+        ]
+        []
+
+
+
+-- Tick marks
+
+
+viewTickMarks : Svg.Svg msg
+viewTickMarks =
+    Svg.g []
+        [ tickMark pastX
+        , tickMark presentX
+        , tickMark futureX
+        ]
+
+
+tickMark : Float -> Svg.Svg msg
+tickMark x =
+    Svg.line
+        [ SA.x1 (ff x)
+        , SA.y1 (ff (axisY - 8))
+        , SA.x2 (ff x)
+        , SA.y2 (ff (axisY + 8))
+        , SA.stroke slateAxis
+        , SA.strokeWidth "2"
+        ]
+        []
+
+
+
+-- Labels
+
+
+viewLabels : Svg.Svg msg
+viewLabels =
+    Svg.g
+        [ SA.fontFamily "system-ui, sans-serif"
+        , SA.fontSize "13"
+        , SA.fontWeight "600"
+        , SA.textAnchor "middle"
+        ]
+        [ Svg.text_
+            [ SA.x (ff pastX)
+            , SA.y (ff (axisY + 25))
+            , SA.fill slateLabel
+            ]
+            [ Svg.text "PAST" ]
+        , Svg.text_
+            [ SA.x (ff presentX)
+            , SA.y (ff (axisY + 25))
+            , SA.fill indigoAccent
+            ]
+            [ Svg.text "NOW" ]
+        , Svg.text_
+            [ SA.x (ff futureX)
+            , SA.y (ff (axisY + 25))
+            , SA.fill slateLabel
+            ]
+            [ Svg.text "FUTURE" ]
+        ]
+
+
+
+-- NOW dashed line
+
+
+viewNowLine : Svg.Svg msg
+viewNowLine =
+    Svg.line
+        [ SA.x1 (ff presentX)
+        , SA.y1 "30"
+        , SA.x2 (ff presentX)
+        , SA.y2 (ff (axisY - 10))
+        , SA.stroke indigoAccent
+        , SA.strokeWidth "1"
+        , SA.strokeDasharray "4 3"
+        , SA.opacity "0.5"
+        ]
+        []
+
+
+
+-- Arrow pointer
+
+
+viewArrow : Float -> Svg.Svg msg
+viewArrow arrowX =
+    let
+        tipY =
+            axisY + 14
+
+        baseY =
+            axisY + 28
+
+        halfW =
+            8
+
+        points =
+            ff arrowX
+                ++ ","
+                ++ ff tipY
+                ++ " "
+                ++ ff (arrowX - halfW)
+                ++ ","
+                ++ ff baseY
+                ++ " "
+                ++ ff (arrowX + halfW)
+                ++ ","
+                ++ ff baseY
+    in
+    Svg.polygon
+        [ SA.points points
+        , SA.fill indigoAccent
+        ]
+        []
+
+
+
+-- Tense name label
+
+
+viewTenseNameLabel : Float -> VerbTense -> Svg.Svg msg
+viewTenseNameLabel arrowX selectedVT =
+    Svg.text_
+        [ SA.x (ff arrowX)
+        , SA.y "255"
+        , SA.textAnchor "middle"
+        , SA.fill indigoAccent
+        , SA.fontSize "16"
+        , SA.fontWeight "700"
+        , SA.fontFamily "system-ui, sans-serif"
+        ]
+        [ Svg.text (verbTenseLabel selectedVT) ]
+
+
+
 -- Feature badges
 
 
 viewBadges : Float -> Voice -> Polarity -> Maybe Modality -> Svg.Svg msg
 viewBadges arrowX voice polarity modal =
     let
-        badgeY =
-            axisY + 40
+        badgeYpos =
+            275
 
         badges =
             List.filterMap identity
@@ -591,7 +726,7 @@ viewBadges arrowX voice polarity modal =
     Svg.g []
         (List.indexedMap
             (\i ( label, color ) ->
-                viewBadge (startX + toFloat i * spacing) badgeY label color
+                viewBadge (startX + toFloat i * spacing) (toFloat badgeYpos) label color
             )
             badges
         )
@@ -611,9 +746,9 @@ viewBadge cx cy label color =
     in
     Svg.g []
         [ Svg.rect
-            [ SA.x (String.fromFloat rectX)
-            , SA.y (String.fromFloat rectY)
-            , SA.width (String.fromFloat textW)
+            [ SA.x (ff rectX)
+            , SA.y (ff rectY)
+            , SA.width (ff textW)
             , SA.height "20"
             , SA.rx "10"
             , SA.fill "rgba(0, 0, 0, 0.3)"
@@ -622,8 +757,8 @@ viewBadge cx cy label color =
             ]
             []
         , Svg.text_
-            [ SA.x (String.fromFloat cx)
-            , SA.y (String.fromFloat (cy + 4))
+            [ SA.x (ff cx)
+            , SA.y (ff (cy + 4))
             , SA.textAnchor "middle"
             , SA.fill color
             , SA.fontSize "11"

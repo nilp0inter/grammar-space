@@ -76,6 +76,7 @@ type Msg
     | SetArgPred String
     | SetArgClause String
     | SetParticipleForm ParticipleForm
+    | SelectVerbTense VerbTense
 
 
 
@@ -359,6 +360,31 @@ update msg model =
         SetParticipleForm pf ->
             ( recompute { model | participleForm = pf }, Cmd.none )
 
+        SelectVerbTense vt ->
+            let
+                spec =
+                    verbTenseToSpec vt
+
+                fs =
+                    model.finiteSpec
+
+                newTenseTimeline =
+                    model.tenseTimeline
+                        |> Animator.go (Animator.millis 400) spec.tense
+            in
+            ( recompute
+                { model
+                    | finiteSpec =
+                        { fs
+                            | fsTense = spec.tense
+                            , fsPerfect = spec.perfect
+                            , fsProgressive = spec.progressive
+                        }
+                    , tenseTimeline = newTenseTimeline
+                }
+            , Cmd.none
+            )
+
 
 togglePerfect : Model -> Model
 togglePerfect model =
@@ -526,7 +552,7 @@ view model =
                         , voice = model.finiteSpec.fsVoice
                         , polarity = model.finiteSpec.fsPolarity
                         , modal = model.finiteSpec.fsModal
-                        , onSetTense = SetTense
+                        , onSelectVerbTense = SelectVerbTense
                         }
                     ]
 
