@@ -1,4 +1,4 @@
-module Timeline exposing (view)
+module Timeline exposing (TimelineMode(..), view)
 
 import Animator
 import Grammar.Types exposing (Modality(..), Polarity(..), Tense(..), VerbTense(..), Voice(..), specToVerbTense, verbTenseLabel, verbTenseToSpec)
@@ -9,8 +9,14 @@ import Svg.Attributes as SA
 import Svg.Events as SE
 
 
+type TimelineMode
+    = CalculatorDisplay
+    | ExerciseBlank
+    | ExerciseFeedback { correct : VerbTense, userAnswer : Maybe VerbTense }
 
--- Config (unchanged)
+
+
+-- Config
 
 
 type alias Config msg =
@@ -22,6 +28,7 @@ type alias Config msg =
     , polarity : Polarity
     , modal : Maybe Modality
     , onSelectVerbTense : VerbTense -> msg
+    , mode : TimelineMode
     }
 
 
@@ -658,6 +665,14 @@ viewStyles =
 .tense-shape.tense-selected:hover {
     filter: brightness(1.2) drop-shadow(0 0 6px rgba(255,255,255,0.3));
 }
+.tense-shape.tense-correct {
+    opacity: 1;
+    filter: brightness(1.2) drop-shadow(0 0 8px rgba(34,197,94,0.6));
+}
+.tense-shape.tense-wrong {
+    opacity: 0.8;
+    filter: brightness(1.0) drop-shadow(0 0 8px rgba(239,68,68,0.6));
+}
 """ ]
 
 
@@ -665,10 +680,10 @@ viewStyles =
 -- All shapes (each as a hoverable group with visual + hitbox)
 
 
-viewAllShapes : VerbTense -> (VerbTense -> msg) -> Svg.Svg msg
-viewAllShapes selectedVT onSelect =
-    Svg.g []
-        (List.map (\vt -> viewShapeGroup vt (vt == selectedVT) onSelect)
+viewAllShapes : TimelineMode -> VerbTense -> (VerbTense -> msg) -> Svg.Svg msg
+viewAllShapes mode selectedVT onSelect =
+    let
+        renderOrder =
             [ FuturePerfectContinuous
             , PresentPerfectContinuous
             , PastPerfectContinuous
@@ -682,18 +697,46 @@ viewAllShapes selectedVT onSelect =
             , SimplePresent
             , SimpleFuture
             ]
-        )
+    in
+    Svg.g []
+        (List.map (\vt -> viewShapeGroup mode vt (vt == selectedVT) onSelect) renderOrder)
 
 
-viewShapeGroup : VerbTense -> Bool -> (VerbTense -> msg) -> Svg.Svg msg
-viewShapeGroup vt isSelected onSelect =
-    let
-        className =
+shapeClassName : TimelineMode -> VerbTense -> Bool -> String
+shapeClassName mode vt isSelected =
+    case mode of
+        CalculatorDisplay ->
             if isSelected then
                 "tense-shape tense-selected"
 
             else
                 "tense-shape"
+
+        ExerciseBlank ->
+            "tense-shape"
+
+        ExerciseFeedback { correct, userAnswer } ->
+            if vt == correct then
+                "tense-shape tense-correct"
+
+            else
+                case userAnswer of
+                    Just ans ->
+                        if vt == ans then
+                            "tense-shape tense-wrong"
+
+                        else
+                            "tense-shape"
+
+                    Nothing ->
+                        "tense-shape"
+
+
+viewShapeGroup : TimelineMode -> VerbTense -> Bool -> (VerbTense -> msg) -> Svg.Svg msg
+viewShapeGroup mode vt isSelected onSelect =
+    let
+        className =
+            shapeClassName mode vt isSelected
 
         spec =
             verbTenseToSpec vt
@@ -963,6 +1006,17 @@ view config =
 
         selectedVT =
             specToVerbTense config.tense config.perfect config.progressive
+
+        showPointer =
+            case config.mode of
+                CalculatorDisplay ->
+                    True
+
+                ExerciseFeedback _ ->
+                    True
+
+                ExerciseBlank ->
+                    False
     in
     Html.div [ Html.Attributes.class "w-full flex justify-center" ]
         [ svg
@@ -971,18 +1025,23 @@ view config =
             , SA.class "max-w-full h-auto"
             , SA.style "user-select: none"
             ]
-            [ viewStyles
+            ([ viewStyles
 
-            -- All shapes (hoverable groups with visual + hitbox)
-            , viewAllShapes selectedVT config.onSelectVerbTense
+             -- All shapes (hoverable groups with visual + hitbox)
+             , viewAllShapes config.mode selectedVT config.onSelectVerbTense
 
-            -- Axis + circles (pointer-events: none, drawn on top visually)
-            , viewAxis
-            , viewTenseCircles
+             -- Axis + circles (pointer-events: none, drawn on top visually)
+             , viewAxis
+             , viewTenseCircles
+             ]
+                ++ (if showPointer then
+                        [ viewArrow arrowXPos
+                        , viewTenseNameLabel arrowXPos selectedVT
+                        , viewBadges arrowXPos config.voice config.polarity config.modal
+                        ]
 
-            -- Animated pointer + tense name + badges
-            , viewArrow arrowXPos
-            , viewTenseNameLabel arrowXPos selectedVT
-            , viewBadges arrowXPos config.voice config.polarity config.modal
-            ]
+                    else
+                        []
+                   )
+            )
         ]

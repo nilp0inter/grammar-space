@@ -1,8 +1,11 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Animator
 import Animator.Inline
+import Array
 import Browser
+import Exercise.Types exposing (ExerciseItem, ExercisePhase(..), ExerciseState, advanceToNext, currentItem, initExercise, recordAnswer)
+import Exercise.View exposing (viewExercise)
 import Grammar.Engine exposing (nullArgs)
 import Grammar.Lexicon as Lexicon
 import Grammar.Render as Render
@@ -10,8 +13,38 @@ import Grammar.Types exposing (..)
 import Html exposing (Html, div, h1, p, span, text)
 import Html.Attributes as Attr
 import Html.Events as Events
+import Json.Decode as Decode
 import Time
 import Timeline
+
+
+
+-- =========================================================
+-- Ports
+-- =========================================================
+
+
+port startOAuthLogin : () -> Cmd msg
+
+
+port analyzeNarrative : String -> Cmd msg
+
+
+port oauthStatusChanged : (Bool -> msg) -> Sub msg
+
+
+port llmResponseReceived : (Decode.Value -> msg) -> Sub msg
+
+
+
+-- =========================================================
+-- AppMode
+-- =========================================================
+
+
+type AppMode
+    = CalculatorMode
+    | ExerciseMode
 
 
 
@@ -23,6 +56,17 @@ import Timeline
 type SentencePhase
     = Visible
     | Refreshing
+
+
+
+-- =========================================================
+-- FeedbackPhase for exercise animation
+-- =========================================================
+
+
+type FeedbackPhase
+    = FeedbackHidden
+    | FeedbackShown
 
 
 
@@ -48,6 +92,14 @@ type alias Model =
     , sentenceTimeline : Animator.Timeline SentencePhase
     , tenseTimeline : Animator.Timeline Tense
     , result : Result String (List SentenceWord)
+    , appMode : AppMode
+    , oauthLoggedIn : Bool
+    , narrativeInput : String
+    , exerciseState : Maybe ExerciseState
+    , llmLoading : Bool
+    , llmError : Maybe String
+    , feedbackTimeline : Animator.Timeline FeedbackPhase
+    , exerciseTenseTimeline : Animator.Timeline Tense
     }
 
 
@@ -77,6 +129,15 @@ type Msg
     | SetArgClause String
     | SetParticipleForm ParticipleForm
     | SelectVerbTense VerbTense
+    | SwitchAppMode AppMode
+    | StartLogin
+    | OAuthStatusChanged Bool
+    | UpdateNarrativeInput String
+    | SubmitNarrative
+    | LLMResponseReceived Decode.Value
+    | ExerciseSelectTense VerbTense
+    | NextExerciseItem
+    | ResetExercise
 
 
 
@@ -96,6 +157,14 @@ animator =
             .tenseTimeline
             (\newTl model -> { model | tenseTimeline = newTl })
             (always False)
+        |> Animator.watchingWith
+            .feedbackTimeline
+            (\newTl model -> { model | feedbackTimeline = newTl })
+            (always False)
+        |> Animator.watchingWith
+            .exerciseTenseTimeline
+            (\newTl model -> { model | exerciseTenseTimeline = newTl })
+            (always False)
 
 
 
@@ -104,9 +173,23 @@ animator =
 -- =========================================================
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
+type alias Flags =
+    { loggedIn : Bool }
+
+
+decodeFlags : Decode.Decoder Flags
+decodeFlags =
+    Decode.map Flags
+        (Decode.field "loggedIn" Decode.bool)
+
+
+init : Decode.Value -> ( Model, Cmd Msg )
+init flagsValue =
     let
+        flags =
+            Decode.decodeValue decodeFlags flagsValue
+                |> Result.withDefault { loggedIn = False }
+
         defaultVerb =
             List.drop 6 Lexicon.verbs
                 |> List.head
@@ -157,6 +240,14 @@ init _ =
             , sentenceTimeline = Animator.init Visible
             , tenseTimeline = Animator.init Present
             , result = Ok []
+            , appMode = CalculatorMode
+            , oauthLoggedIn = flags.loggedIn
+            , narrativeInput = ""
+            , exerciseState = Nothing
+            , llmLoading = False
+            , llmError = Nothing
+            , feedbackTimeline = Animator.init FeedbackHidden
+            , exerciseTenseTimeline = Animator.init Present
             }
     in
     ( recompute model, Cmd.none )
@@ -202,6 +293,40 @@ recompute model =
                     ]
     in
     { model | result = result, sentenceTimeline = newTimeline }
+
+
+
+-- =========================================================
+-- LLM Response Decoder
+-- =========================================================
+
+
+decodeLLMResponse : Decode.Decoder (List ExerciseItem)
+decodeLLMResponse =
+    Decode.field "sentences"
+        (Decode.list decodeExerciseItem)
+
+
+decodeExerciseItem : Decode.Decoder ExerciseItem
+decodeExerciseItem =
+    Decode.map3 ExerciseItem
+        (Decode.field "original" Decode.string)
+        (Decode.field "verbTense" decodeVerbTense)
+        (Decode.field "explanation" Decode.string)
+
+
+decodeVerbTense : Decode.Decoder VerbTense
+decodeVerbTense =
+    Decode.string
+        |> Decode.andThen
+            (\s ->
+                case verbTenseFromString s of
+                    Just vt ->
+                        Decode.succeed vt
+
+                    Nothing ->
+                        Decode.fail ("Unknown verb tense: " ++ s)
+            )
 
 
 
@@ -386,6 +511,137 @@ update msg model =
             , Cmd.none
             )
 
+        SwitchAppMode mode ->
+            ( { model | appMode = mode }, Cmd.none )
+
+        StartLogin ->
+            ( model, startOAuthLogin () )
+
+        OAuthStatusChanged loggedIn ->
+            ( { model | oauthLoggedIn = loggedIn }, Cmd.none )
+
+        UpdateNarrativeInput val ->
+            ( { model | narrativeInput = val }, Cmd.none )
+
+        SubmitNarrative ->
+            if String.isEmpty (String.trim model.narrativeInput) then
+                ( model, Cmd.none )
+
+            else
+                ( { model | llmLoading = True, llmError = Nothing }
+                , analyzeNarrative model.narrativeInput
+                )
+
+        LLMResponseReceived value ->
+            case Decode.decodeValue (Decode.field "error" Decode.string) value of
+                Ok errMsg ->
+                    ( { model | llmLoading = False, llmError = Just errMsg }, Cmd.none )
+
+                Err _ ->
+                    case Decode.decodeValue decodeLLMResponse value of
+                        Ok items ->
+                            if List.isEmpty items then
+                                ( { model | llmLoading = False, llmError = Just "No sentences found in the narrative. Try writing more." }, Cmd.none )
+
+                            else
+                                let
+                                    exState =
+                                        initExercise items
+
+                                    firstTense =
+                                        List.head items
+                                            |> Maybe.map .correctTense
+                                            |> Maybe.withDefault SimplePresent
+
+                                    spec =
+                                        verbTenseToSpec firstTense
+                                in
+                                ( { model
+                                    | llmLoading = False
+                                    , llmError = Nothing
+                                    , exerciseState = Just exState
+                                    , exerciseTenseTimeline = Animator.init spec.tense
+                                  }
+                                , Cmd.none
+                                )
+
+                        Err decodeErr ->
+                            ( { model | llmLoading = False, llmError = Just ("Failed to parse response: " ++ Decode.errorToString decodeErr) }, Cmd.none )
+
+        ExerciseSelectTense vt ->
+            case model.exerciseState of
+                Just state ->
+                    case state.phase of
+                        Answering ->
+                            let
+                                newState =
+                                    recordAnswer vt state
+
+                                item =
+                                    currentItem state
+
+                                correctTense =
+                                    item
+                                        |> Maybe.map .correctTense
+                                        |> Maybe.withDefault SimplePresent
+
+                                correctSpec =
+                                    verbTenseToSpec correctTense
+
+                                newExTenseTimeline =
+                                    model.exerciseTenseTimeline
+                                        |> Animator.go (Animator.millis 400) correctSpec.tense
+
+                                newFeedbackTimeline =
+                                    model.feedbackTimeline
+                                        |> Animator.go (Animator.millis 300) FeedbackShown
+                            in
+                            ( { model
+                                | exerciseState = Just newState
+                                , exerciseTenseTimeline = newExTenseTimeline
+                                , feedbackTimeline = newFeedbackTimeline
+                              }
+                            , Cmd.none
+                            )
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        NextExerciseItem ->
+            case model.exerciseState of
+                Just state ->
+                    let
+                        newState =
+                            advanceToNext state
+
+                        newFeedbackTimeline =
+                            model.feedbackTimeline
+                                |> Animator.go (Animator.millis 200) FeedbackHidden
+                    in
+                    ( { model
+                        | exerciseState = Just newState
+                        , feedbackTimeline = newFeedbackTimeline
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ResetExercise ->
+            ( { model
+                | exerciseState = Nothing
+                , narrativeInput = ""
+                , llmError = Nothing
+                , feedbackTimeline = Animator.init FeedbackHidden
+                , exerciseTenseTimeline = Animator.init Present
+              }
+            , Cmd.none
+            )
+
 
 togglePerfect : Model -> Model
 togglePerfect model =
@@ -528,7 +784,11 @@ setPolarity p model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Animator.toSubscription Tick model animator
+    Sub.batch
+        [ Animator.toSubscription Tick model animator
+        , oauthStatusChanged OAuthStatusChanged
+        , llmResponseReceived LLMResponseReceived
+        ]
 
 
 
@@ -540,8 +800,55 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div [ Attr.class "flex flex-col items-center min-h-screen py-10 px-4 gap-8 max-w-4xl mx-auto" ]
-        ([ viewTitle
-         , viewSentence model
+        [ viewTitle
+        , viewTabBar model.appMode
+        , case model.appMode of
+            CalculatorMode ->
+                viewCalculator model
+
+            ExerciseMode ->
+                viewExerciseTab model
+        ]
+
+
+viewTitle : Html Msg
+viewTitle =
+    h1 [ Attr.class "text-4xl font-bold tracking-tight text-white" ]
+        [ text "Grammar Space" ]
+
+
+viewTabBar : AppMode -> Html Msg
+viewTabBar currentMode =
+    div [ Attr.class "inline-flex rounded-full bg-slate-800/50 p-0.5" ]
+        [ viewTab (currentMode == CalculatorMode) (SwitchAppMode CalculatorMode) "Calculator"
+        , viewTab (currentMode == ExerciseMode) (SwitchAppMode ExerciseMode) "Exercise"
+        ]
+
+
+viewTab : Bool -> Msg -> String -> Html Msg
+viewTab isActive msg label =
+    let
+        baseClass =
+            "px-5 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer select-none"
+
+        colorClass =
+            if isActive then
+                "bg-indigo-600 text-white"
+
+            else
+                "text-slate-400 hover:text-slate-200"
+    in
+    span
+        [ Attr.class (baseClass ++ " " ++ colorClass)
+        , Events.onClick msg
+        ]
+        [ text label ]
+
+
+viewCalculator : Model -> Html Msg
+viewCalculator model =
+    div [ Attr.class "flex flex-col items-center gap-8 w-full" ]
+        ([ viewSentence model
          , viewError model
          ]
             ++ (if model.clauseMode == FiniteMode then
@@ -554,6 +861,7 @@ view model =
                         , polarity = model.finiteSpec.fsPolarity
                         , modal = model.finiteSpec.fsModal
                         , onSelectVerbTense = SelectVerbTense
+                        , mode = Timeline.CalculatorDisplay
                         }
                     ]
 
@@ -566,10 +874,76 @@ view model =
         )
 
 
-viewTitle : Html Msg
-viewTitle =
-    h1 [ Attr.class "text-4xl font-bold tracking-tight text-white" ]
-        [ text "Grammar Space" ]
+viewExerciseTab : Model -> Html Msg
+viewExerciseTab model =
+    let
+        exerciseTimelineMode =
+            case model.exerciseState of
+                Just state ->
+                    case state.phase of
+                        ShowingFeedback ->
+                            let
+                                userAnswer =
+                                    Array.get state.currentIndex state.answers
+                                        |> Maybe.andThen identity
+
+                                correctTense =
+                                    currentItem state
+                                        |> Maybe.map .correctTense
+                                        |> Maybe.withDefault SimplePresent
+                            in
+                            Timeline.ExerciseFeedback
+                                { correct = correctTense
+                                , userAnswer = userAnswer
+                                }
+
+                        _ ->
+                            Timeline.ExerciseBlank
+
+                Nothing ->
+                    Timeline.ExerciseBlank
+
+        correctSpec =
+            case model.exerciseState of
+                Just state ->
+                    case state.phase of
+                        ShowingFeedback ->
+                            currentItem state
+                                |> Maybe.map (.correctTense >> verbTenseToSpec)
+                                |> Maybe.withDefault { tense = Present, perfect = False, progressive = False }
+
+                        _ ->
+                            { tense = Present, perfect = False, progressive = False }
+
+                Nothing ->
+                    { tense = Present, perfect = False, progressive = False }
+
+        timelineHtml =
+            Timeline.view
+                { tenseTimeline = model.exerciseTenseTimeline
+                , tense = correctSpec.tense
+                , perfect = correctSpec.perfect
+                , progressive = correctSpec.progressive
+                , voice = Active
+                , polarity = Affirmative
+                , modal = Nothing
+                , onSelectVerbTense = ExerciseSelectTense
+                , mode = exerciseTimelineMode
+                }
+    in
+    viewExercise
+        { oauthLoggedIn = model.oauthLoggedIn
+        , narrativeInput = model.narrativeInput
+        , exerciseState = model.exerciseState
+        , llmLoading = model.llmLoading
+        , llmError = model.llmError
+        , onStartLogin = StartLogin
+        , onUpdateNarrative = UpdateNarrativeInput
+        , onSubmitNarrative = SubmitNarrative
+        , onNextItem = NextExerciseItem
+        , onResetExercise = ResetExercise
+        , timelineView = timelineHtml
+        }
 
 
 viewSentence : Model -> Html Msg
@@ -659,9 +1033,9 @@ roleColors role =
 viewError : Model -> Html Msg
 viewError model =
     case model.result of
-        Err msg ->
+        Err errMsg ->
             div [ Attr.class "w-full px-4 py-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm" ]
-                [ text msg ]
+                [ text errMsg ]
 
         Ok _ ->
             text ""
@@ -1055,18 +1429,18 @@ type alias SegmentOption msg =
 
 
 seg : Bool -> msg -> String -> SegmentOption msg
-seg selected msg label =
-    { selected = selected, disabled = False, style = NormalSegment, msg = msg, label = label }
+seg selected msgVal label =
+    { selected = selected, disabled = False, style = NormalSegment, msg = msgVal, label = label }
 
 
 segNone : Bool -> msg -> String -> SegmentOption msg
-segNone selected msg label =
-    { selected = selected, disabled = False, style = NoneSegment, msg = msg, label = label }
+segNone selected msgVal label =
+    { selected = selected, disabled = False, style = NoneSegment, msg = msgVal, label = label }
 
 
 segDisabled : msg -> String -> SegmentOption msg
-segDisabled msg label =
-    { selected = False, disabled = True, style = NormalSegment, msg = msg, label = label }
+segDisabled msgVal label =
+    { selected = False, disabled = True, style = NormalSegment, msg = msgVal, label = label }
 
 
 segmentedControl : List (SegmentOption Msg) -> Html Msg
@@ -1115,7 +1489,7 @@ viewSegment opt =
 
 
 toggle : Bool -> Bool -> Msg -> String -> Html Msg
-toggle active disabled msg label =
+toggle active disabled msgVal label =
     let
         baseClass =
             "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer select-none"
@@ -1146,7 +1520,7 @@ toggle active disabled msg label =
 
             else
                 [ Attr.class (baseClass ++ " " ++ colorClass)
-                , Events.onClick msg
+                , Events.onClick msgVal
                 ]
     in
     span attrs [ dot, text label ]
@@ -1158,7 +1532,7 @@ toggle active disabled msg label =
 -- =========================================================
 
 
-main : Program () Model Msg
+main : Program Decode.Value Model Msg
 main =
     Browser.element
         { init = init

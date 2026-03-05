@@ -322,6 +322,49 @@ specToVerbTense tense perfect progressive =
             FuturePerfectContinuous
 
 
+verbTenseFromString : String -> Maybe VerbTense
+verbTenseFromString s =
+    case s of
+        "SimplePast" ->
+            Just SimplePast
+
+        "PastContinuous" ->
+            Just PastContinuous
+
+        "PastPerfect" ->
+            Just PastPerfect
+
+        "PastPerfectContinuous" ->
+            Just PastPerfectContinuous
+
+        "SimplePresent" ->
+            Just SimplePresent
+
+        "PresentContinuous" ->
+            Just PresentContinuous
+
+        "PresentPerfect" ->
+            Just PresentPerfect
+
+        "PresentPerfectContinuous" ->
+            Just PresentPerfectContinuous
+
+        "SimpleFuture" ->
+            Just SimpleFuture
+
+        "FutureContinuous" ->
+            Just FutureContinuous
+
+        "FuturePerfect" ->
+            Just FuturePerfect
+
+        "FuturePerfectContinuous" ->
+            Just FuturePerfectContinuous
+
+        _ ->
+            Nothing
+
+
 verbTenseLabel : VerbTense -> String
 verbTenseLabel vt =
     case vt of
