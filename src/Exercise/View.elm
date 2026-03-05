@@ -2,7 +2,7 @@ module Exercise.View exposing (viewExercise)
 
 import Array
 import Exercise.Types exposing (..)
-import Grammar.Types exposing (VerbTense, verbTenseLabel)
+import Grammar.Types exposing (Aspect(..), Tense(..), VerbTense, allAspects, allTenses, aspectLabel, tenseLabel, verbTenseForCell, verbTenseLabel, verbTensesForAspect, verbTensesForTense)
 import Html exposing (Html, button, div, label, option, p, select, span, text, textarea)
 import Html.Attributes as Attr
 import Html.Events as Events
@@ -37,6 +37,14 @@ type alias ExerciseConfig msg =
     , onChooseExerciseType : ExerciseTypeChoice -> msg
     , onUpdateTranslationInput : String -> msg
     , onSubmitTranslation : msg
+    , selectedTopic : StoryTopic
+    , customTopicInput : String
+    , selectedTenses : List VerbTense
+    , onSelectStoryTopic : StoryTopic -> msg
+    , onUpdateCustomTopic : String -> msg
+    , onToggleStoryTense : VerbTense -> msg
+    , onToggleTenseColumn : Tense -> msg
+    , onToggleTenseRow : Aspect -> msg
     }
 
 
@@ -163,7 +171,7 @@ viewGenerateStoryInput : ExerciseConfig msg -> Html msg
 viewGenerateStoryInput config =
     div [ Attr.class "flex flex-col items-center gap-4 w-full" ]
         [ p [ Attr.class "text-slate-400 text-center max-w-lg" ]
-            [ text "The AI will generate a short everyday story in the language you choose, using a variety of verb tenses from past to future. Then you'll identify the English equivalents." ]
+            [ text "Choose a topic and tenses, then the AI will generate a short story in your chosen language." ]
         , div [ Attr.class "flex flex-col gap-1 w-full max-w-lg" ]
             [ label [ Attr.class "text-xs font-medium text-slate-500 uppercase tracking-wider" ]
                 [ text "Story Language" ]
@@ -183,6 +191,8 @@ viewGenerateStoryInput config =
                     config.storyLanguages
                 )
             ]
+        , viewTopicSelector config
+        , viewTenseGrid config
         ]
 
 
@@ -213,16 +223,23 @@ viewSubmitButton config =
                 ]
 
         GenerateStoryMode ->
+            let
+                tooFewTenses =
+                    List.length config.selectedTenses < 2
+
+                isDisabled =
+                    config.llmLoading || tooFewTenses
+            in
             button
                 [ Attr.class
-                    (if config.llmLoading then
+                    (if isDisabled then
                         "px-6 py-3 rounded-full bg-slate-700 text-slate-500 font-medium cursor-not-allowed"
 
                      else
                         "px-6 py-3 rounded-full bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
                     )
                 , Events.onClick config.onSubmitGenerateStory
-                , Attr.disabled config.llmLoading
+                , Attr.disabled isDisabled
                 ]
                 [ if config.llmLoading then
                     text "Generating..."
@@ -262,6 +279,193 @@ viewModelSelector config =
                         [ text m.name ]
                 )
                 models
+            )
+        ]
+
+
+
+-- =========================================================
+-- Topic Selector
+-- =========================================================
+
+
+viewTopicSelector : ExerciseConfig msg -> Html msg
+viewTopicSelector config =
+    let
+        currentTopicId =
+            case config.selectedTopic of
+                PredefinedTopic tid ->
+                    tid
+
+                CustomTopic ->
+                    "__custom__"
+
+        onTopicChange val =
+            if val == "__custom__" then
+                config.onSelectStoryTopic CustomTopic
+
+            else
+                config.onSelectStoryTopic (PredefinedTopic val)
+    in
+    div [ Attr.class "flex flex-col gap-1 w-full max-w-lg" ]
+        ([ label [ Attr.class "text-xs font-medium text-slate-500 uppercase tracking-wider" ]
+            [ text "Topic" ]
+         , select
+            [ Attr.class "w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 appearance-none"
+            , Attr.value currentTopicId
+            , Events.onInput onTopicChange
+            ]
+            (List.map
+                (\t ->
+                    option
+                        [ Attr.value t.id
+                        , Attr.selected (currentTopicId == t.id)
+                        ]
+                        [ text t.label ]
+                )
+                storyTopics
+                ++ [ option
+                        [ Attr.value "__custom__"
+                        , Attr.selected (currentTopicId == "__custom__")
+                        ]
+                        [ text "Custom..." ]
+                   ]
+            )
+         ]
+            ++ (case config.selectedTopic of
+                    CustomTopic ->
+                        [ Html.input
+                            [ Attr.class "w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 mt-2"
+                            , Attr.placeholder "Enter your custom topic..."
+                            , Attr.value config.customTopicInput
+                            , Events.onInput config.onUpdateCustomTopic
+                            ]
+                            []
+                        ]
+
+                    PredefinedTopic _ ->
+                        []
+               )
+        )
+
+
+
+-- =========================================================
+-- Tense Grid
+-- =========================================================
+
+
+viewTenseGrid : ExerciseConfig msg -> Html msg
+viewTenseGrid config =
+    let
+        selectedCount =
+            List.length config.selectedTenses
+
+        countText =
+            String.fromInt selectedCount ++ " of 12 tenses selected"
+
+        countClass =
+            if selectedCount < 2 then
+                "text-rose-400 text-xs"
+
+            else
+                "text-slate-500 text-xs"
+    in
+    div [ Attr.class "flex flex-col gap-2 w-full max-w-lg" ]
+        [ div [ Attr.class "flex items-center justify-between" ]
+            [ label [ Attr.class "text-xs font-medium text-slate-500 uppercase tracking-wider" ]
+                [ text "Verb Tenses" ]
+            , span [ Attr.class countClass ]
+                [ text
+                    (if selectedCount < 2 then
+                        countText ++ " (minimum 2)"
+
+                     else
+                        countText
+                    )
+                ]
+            ]
+        , div [ Attr.class "grid grid-cols-4 gap-1" ]
+            ([ -- Top-left empty corner
+               div [ Attr.class "p-1" ] []
+             ]
+                ++ -- Column headers (Past, Present, Future)
+                   List.map
+                    (\t ->
+                        let
+                            colTenses =
+                                verbTensesForTense t
+
+                            allSelected =
+                                List.all (\vt -> List.member vt config.selectedTenses) colTenses
+                        in
+                        div
+                            [ Attr.class
+                                ("p-1.5 text-center text-xs font-semibold rounded cursor-pointer select-none transition-colors "
+                                    ++ (if allSelected then
+                                            "text-indigo-300 bg-indigo-500/20"
+
+                                        else
+                                            "text-slate-400 hover:text-slate-200"
+                                       )
+                                )
+                            , Events.onClick (config.onToggleTenseColumn t)
+                            ]
+                            [ text (tenseLabel t) ]
+                    )
+                    allTenses
+                ++ -- Rows: one per aspect
+                   List.concatMap
+                    (\a ->
+                        let
+                            rowTenses =
+                                verbTensesForAspect a
+
+                            allRowSelected =
+                                List.all (\vt -> List.member vt config.selectedTenses) rowTenses
+                        in
+                        -- Row header
+                        [ div
+                            [ Attr.class
+                                ("p-1.5 text-xs font-semibold rounded cursor-pointer select-none transition-colors "
+                                    ++ (if allRowSelected then
+                                            "text-indigo-300 bg-indigo-500/20"
+
+                                        else
+                                            "text-slate-400 hover:text-slate-200"
+                                       )
+                                )
+                            , Events.onClick (config.onToggleTenseRow a)
+                            ]
+                            [ text (aspectLabel a) ]
+                        ]
+                            ++ -- Cells for this row
+                               List.map
+                                (\t ->
+                                    let
+                                        vt =
+                                            verbTenseForCell t a
+
+                                        isSelected =
+                                            List.member vt config.selectedTenses
+                                    in
+                                    div
+                                        [ Attr.class
+                                            ("p-1.5 text-center text-xs rounded cursor-pointer select-none transition-colors "
+                                                ++ (if isSelected then
+                                                        "bg-indigo-600 text-white"
+
+                                                    else
+                                                        "bg-slate-800/50 text-slate-600 hover:text-slate-400"
+                                                   )
+                                            )
+                                        , Events.onClick (config.onToggleStoryTense vt)
+                                        ]
+                                        [ text (verbTenseLabel vt) ]
+                                )
+                                allTenses
+                    )
+                    allAspects
             )
         ]
 

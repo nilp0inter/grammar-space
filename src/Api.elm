@@ -1,7 +1,7 @@
 module Api exposing (ApiError(..), EvaluationResult, LLMModel, analyzeNarrative, errorToString, evaluateTranslation, fetchModels, generateStory)
 
 import Exercise.Types exposing (ExerciseItem)
-import Grammar.Types exposing (VerbTense, verbTenseFromString)
+import Grammar.Types exposing (VerbTense, verbTenseFromString, verbTenseLabel, verbTenseToString)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -38,22 +38,27 @@ SimpleFuture, FutureContinuous, FuturePerfect, FuturePerfectContinuous
 Respond with a JSON object containing a "sentences" array."""
 
 
-generateSystemPrompt : String
-generateSystemPrompt =
-    """You are a language teaching assistant. The user will specify a non-English language. You MUST write a very short everyday story (5-7 sentences, no more than 10) entirely in that language — NOT in English. Every sentence in the "original" field must be written in the specified language. The story should be about a mundane, relatable topic (e.g., going to a market, a day at work, planning a trip, cooking dinner). Keep each sentence short and simple.
+buildGenerateSystemPrompt : String -> List VerbTense -> String
+buildGenerateSystemPrompt topic tenses =
+    let
+        tenseLabels =
+            List.map verbTenseLabel tenses |> String.join ", "
 
-IMPORTANT: Use a diverse mix of verb tenses spanning from past through future. Try to include at least 4 different tenses across the sentences (e.g., simple past, past continuous, present perfect, simple future, future continuous, etc.).
+        tenseEnums =
+            List.map verbTenseToString tenses |> String.join ", "
 
-After writing the story, analyze each sentence and determine the primary English verb tense that would be used to translate it.
-
-The verb tense MUST be one of these exact values:
-SimplePast, PastContinuous, PastPerfect, PastPerfectContinuous,
-SimplePresent, PresentContinuous, PresentPerfect, PresentPerfectContinuous,
-SimpleFuture, FutureContinuous, FuturePerfect, FuturePerfectContinuous
-
-The "explanation" field should be a brief English explanation (1 sentence) of why that tense applies.
-
-Respond with a JSON object containing a "sentences" array. The array MUST have at most 10 items."""
+        tenseCount =
+            List.length tenses
+    in
+    "You are a language teaching assistant. The user will specify a non-English language. You MUST write a very short everyday story (5-7 sentences, no more than 10) entirely in that language — NOT in English. Every sentence in the \"original\" field must be written in the specified language. The story MUST be about: "
+        ++ topic
+        ++ ". Keep each sentence short and simple.\n\nIMPORTANT: You MUST use ONLY the following verb tenses (distribute them as evenly as possible across sentences): "
+        ++ tenseLabels
+        ++ ". Try to use at least "
+        ++ String.fromInt (min tenseCount 4)
+        ++ " different tenses.\n\nAfter writing the story, analyze each sentence and determine the primary English verb tense that would be used to translate it.\n\nThe verb tense MUST be one of these exact values:\n"
+        ++ tenseEnums
+        ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\nRespond with a JSON object containing a \"sentences\" array. The array MUST have at most 10 items."
 
 
 evaluationSystemPrompt : String
@@ -402,11 +407,14 @@ analyzeNarrative { apiKey, narrative, model, onResult } =
         }
 
 
-generateStory : { apiKey : String, language : String, model : String, onResult : Result ApiError (List ExerciseItem) -> msg } -> Cmd msg
-generateStory { apiKey, language, model, onResult } =
+generateStory : { apiKey : String, language : String, topic : String, tenses : List VerbTense, model : String, onResult : Result ApiError (List ExerciseItem) -> msg } -> Cmd msg
+generateStory { apiKey, language, topic, tenses, model, onResult } =
     let
         languageName =
             languageNameFromCode language
+
+        systemPrompt =
+            buildGenerateSystemPrompt topic tenses
     in
     Http.request
         { method = "POST"
@@ -418,8 +426,8 @@ generateStory { apiKey, language, model, onResult } =
                     [ ( "model", Encode.string model )
                     , ( "messages"
                       , Encode.list identity
-                            [ Encode.object [ ( "role", Encode.string "system" ), ( "content", Encode.string generateSystemPrompt ) ]
-                            , Encode.object [ ( "role", Encode.string "user" ), ( "content", Encode.string ("Write the story in " ++ languageName ++ ".") ) ]
+                            [ Encode.object [ ( "role", Encode.string "system" ), ( "content", Encode.string systemPrompt ) ]
+                            , Encode.object [ ( "role", Encode.string "user" ), ( "content", Encode.string ("Write the story in " ++ languageName ++ " about: " ++ topic ++ ".") ) ]
                             ]
                       )
                     , ( "response_format", responseSchema )

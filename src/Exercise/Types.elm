@@ -238,3 +238,33 @@ translationScore state =
 
         TenseIdentification _ ->
             { perfect = 0, good = 0, wrong = 0, total = Array.length state.items }
+
+
+type StoryTopic
+    = PredefinedTopic String
+    | CustomTopic
+
+
+storyTopics : List { id : String, label : String }
+storyTopics =
+    [ { id = "daily-routine", label = "Daily Routine" }
+    , { id = "grocery-shopping", label = "Grocery Shopping" }
+    , { id = "cooking-dinner", label = "Cooking Dinner" }
+    , { id = "commute-to-work", label = "Commute to Work" }
+    , { id = "weekend-plans", label = "Weekend Plans" }
+    , { id = "doctor-visit", label = "Doctor Visit" }
+    , { id = "meeting-a-friend", label = "Meeting a Friend" }
+    , { id = "moving-to-a-new-city", label = "Moving to a New City" }
+    , { id = "job-interview", label = "Job Interview" }
+    , { id = "family-dinner", label = "Family Dinner" }
+    , { id = "planning-a-vacation", label = "Planning a Vacation" }
+    , { id = "a-rainy-day", label = "A Rainy Day" }
+    , { id = "birthday-party", label = "Birthday Party" }
+    , { id = "learning-a-new-skill", label = "Learning a New Skill" }
+    , { id = "getting-lost-in-a-city", label = "Getting Lost in a City" }
+    , { id = "taking-care-of-a-pet", label = "Taking Care of a Pet" }
+    , { id = "a-day-at-school", label = "A Day at School" }
+    , { id = "cleaning-the-house", label = "Cleaning the House" }
+    , { id = "eating-at-a-restaurant", label = "Eating at a Restaurant" }
+    , { id = "morning-exercise", label = "Morning Exercise" }
+    ]

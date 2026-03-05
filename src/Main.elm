@@ -5,7 +5,7 @@ import Animator.Inline
 import Api
 import Array
 import Browser
-import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExerciseKind(..), ExercisePhase(..), ExerciseState, ExerciseTypeChoice(..), TranslationEvaluation(..), advanceToNext, currentItem, initTenseIdExercise, initTranslationExercise, recordTenseAnswer, recordTranslationEvaluation, setTranslationEvaluating, updateTranslationInput)
+import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExerciseKind(..), ExercisePhase(..), ExerciseState, ExerciseTypeChoice(..), StoryTopic(..), TranslationEvaluation(..), advanceToNext, currentItem, initTenseIdExercise, initTranslationExercise, recordTenseAnswer, recordTranslationEvaluation, setTranslationEvaluating, storyTopics, updateTranslationInput)
 import Exercise.View exposing (viewExercise)
 import Grammar.Engine exposing (nullArgs)
 import Grammar.Lexicon as Lexicon
@@ -136,6 +136,9 @@ type alias Model =
     , savedStories : List SavedStory
     , currentTime : Time.Posix
     , exerciseTypeChoice : ExerciseTypeChoice
+    , selectedTopic : StoryTopic
+    , customTopicInput : String
+    , selectedTenses : List VerbTense
     }
 
 
@@ -186,6 +189,11 @@ type Msg
     | UpdateTranslationInput String
     | SubmitTranslation
     | TranslationEvalResult (Result Api.ApiError Api.EvaluationResult)
+    | SelectStoryTopic StoryTopic
+    | UpdateCustomTopic String
+    | ToggleStoryTense VerbTense
+    | ToggleTenseColumn Tense
+    | ToggleTenseRow Aspect
 
 
 
@@ -314,6 +322,9 @@ init flagsValue =
             , savedStories = flags.savedStories
             , currentTime = Time.millisToPosix 0
             , exerciseTypeChoice = TenseIdChoice
+            , selectedTopic = PredefinedTopic "daily-routine"
+            , customTopicInput = ""
+            , selectedTenses = allVerbTenses
             }
     in
     ( recompute model
@@ -789,19 +800,42 @@ update msg model =
             ( { model | selectedLanguage = code }, Cmd.none )
 
         SubmitGenerateStory ->
-            case model.apiKey of
-                Just key ->
-                    ( { model | llmLoading = True, llmError = Nothing }
-                    , Api.generateStory
-                        { apiKey = key
-                        , language = model.selectedLanguage
-                        , model = model.selectedModelId
-                        , onResult = GenerateResult
-                        }
-                    )
+            if List.length model.selectedTenses < 2 then
+                ( { model | llmError = Just "Please select at least 2 tenses." }, Cmd.none )
 
-                Nothing ->
-                    ( { model | llmError = Just "Not connected to OpenRouter. Please connect first." }, Cmd.none )
+            else
+                let
+                    topicLabel =
+                        case model.selectedTopic of
+                            PredefinedTopic tid ->
+                                storyTopics
+                                    |> List.filter (\t -> t.id == tid)
+                                    |> List.head
+                                    |> Maybe.map .label
+                                    |> Maybe.withDefault tid
+
+                            CustomTopic ->
+                                String.trim model.customTopicInput
+                in
+                if String.isEmpty topicLabel then
+                    ( { model | llmError = Just "Please enter a custom topic." }, Cmd.none )
+
+                else
+                    case model.apiKey of
+                        Just key ->
+                            ( { model | llmLoading = True, llmError = Nothing }
+                            , Api.generateStory
+                                { apiKey = key
+                                , language = model.selectedLanguage
+                                , topic = topicLabel
+                                , tenses = model.selectedTenses
+                                , model = model.selectedModelId
+                                , onResult = GenerateResult
+                                }
+                            )
+
+                        Nothing ->
+                            ( { model | llmError = Just "Not connected to OpenRouter. Please connect first." }, Cmd.none )
 
         LoadSavedStory story ->
             let
@@ -924,6 +958,75 @@ update msg model =
                       }
                     , cmd
                     )
+
+        SelectStoryTopic topic ->
+            ( { model | selectedTopic = topic }, Cmd.none )
+
+        UpdateCustomTopic val ->
+            ( { model | customTopicInput = val }, Cmd.none )
+
+        ToggleStoryTense vt ->
+            let
+                newTenses =
+                    if List.member vt model.selectedTenses then
+                        List.filter (\t -> t /= vt) model.selectedTenses
+
+                    else
+                        model.selectedTenses ++ [ vt ]
+            in
+            ( { model | selectedTenses = newTenses }, Cmd.none )
+
+        ToggleTenseColumn tense ->
+            let
+                columnTenses =
+                    verbTensesForTense tense
+
+                allSelected =
+                    List.all (\vt -> List.member vt model.selectedTenses) columnTenses
+
+                newTenses =
+                    if allSelected then
+                        List.filter (\vt -> not (List.member vt columnTenses)) model.selectedTenses
+
+                    else
+                        List.foldl
+                            (\vt acc ->
+                                if List.member vt acc then
+                                    acc
+
+                                else
+                                    acc ++ [ vt ]
+                            )
+                            model.selectedTenses
+                            columnTenses
+            in
+            ( { model | selectedTenses = newTenses }, Cmd.none )
+
+        ToggleTenseRow aspect ->
+            let
+                rowTenses =
+                    verbTensesForAspect aspect
+
+                allSelected =
+                    List.all (\vt -> List.member vt model.selectedTenses) rowTenses
+
+                newTenses =
+                    if allSelected then
+                        List.filter (\vt -> not (List.member vt rowTenses)) model.selectedTenses
+
+                    else
+                        List.foldl
+                            (\vt acc ->
+                                if List.member vt acc then
+                                    acc
+
+                                else
+                                    acc ++ [ vt ]
+                            )
+                            model.selectedTenses
+                            rowTenses
+            in
+            ( { model | selectedTenses = newTenses }, Cmd.none )
 
 
 togglePerfect : Model -> Model
@@ -1259,6 +1362,14 @@ viewExerciseTab model =
         , onChooseExerciseType = ChooseExerciseType
         , onUpdateTranslationInput = UpdateTranslationInput
         , onSubmitTranslation = SubmitTranslation
+        , selectedTopic = model.selectedTopic
+        , customTopicInput = model.customTopicInput
+        , selectedTenses = model.selectedTenses
+        , onSelectStoryTopic = SelectStoryTopic
+        , onUpdateCustomTopic = UpdateCustomTopic
+        , onToggleStoryTense = ToggleStoryTense
+        , onToggleTenseColumn = ToggleTenseColumn
+        , onToggleTenseRow = ToggleTenseRow
         }
 
 

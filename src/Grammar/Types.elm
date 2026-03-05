@@ -443,3 +443,99 @@ verbTenseLabel vt =
 
         FuturePerfectContinuous ->
             "Future Perfect Continuous"
+
+
+type Aspect
+    = Simple
+    | Continuous
+    | PerfectAspect
+    | PerfectContinuousAspect
+
+
+allAspects : List Aspect
+allAspects =
+    [ Simple, Continuous, PerfectAspect, PerfectContinuousAspect ]
+
+
+allTenses : List Tense
+allTenses =
+    [ Past, Present, Future ]
+
+
+aspectLabel : Aspect -> String
+aspectLabel a =
+    case a of
+        Simple ->
+            "Simple"
+
+        Continuous ->
+            "Continuous"
+
+        PerfectAspect ->
+            "Perfect"
+
+        PerfectContinuousAspect ->
+            "Perfect Continuous"
+
+
+tenseLabel : Tense -> String
+tenseLabel t =
+    case t of
+        Past ->
+            "Past"
+
+        Present ->
+            "Present"
+
+        Future ->
+            "Future"
+
+
+verbTenseForCell : Tense -> Aspect -> VerbTense
+verbTenseForCell t a =
+    case ( t, a ) of
+        ( Past, Simple ) ->
+            SimplePast
+
+        ( Past, Continuous ) ->
+            PastContinuous
+
+        ( Past, PerfectAspect ) ->
+            PastPerfect
+
+        ( Past, PerfectContinuousAspect ) ->
+            PastPerfectContinuous
+
+        ( Present, Simple ) ->
+            SimplePresent
+
+        ( Present, Continuous ) ->
+            PresentContinuous
+
+        ( Present, PerfectAspect ) ->
+            PresentPerfect
+
+        ( Present, PerfectContinuousAspect ) ->
+            PresentPerfectContinuous
+
+        ( Future, Simple ) ->
+            SimpleFuture
+
+        ( Future, Continuous ) ->
+            FutureContinuous
+
+        ( Future, PerfectAspect ) ->
+            FuturePerfect
+
+        ( Future, PerfectContinuousAspect ) ->
+            FuturePerfectContinuous
+
+
+verbTensesForTense : Tense -> List VerbTense
+verbTensesForTense t =
+    List.map (verbTenseForCell t) allAspects
+
+
+verbTensesForAspect : Aspect -> List VerbTense
+verbTensesForAspect a =
+    List.map (\t -> verbTenseForCell t a) allTenses
