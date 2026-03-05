@@ -653,25 +653,48 @@ viewStyles =
         [ Svg.text """.tense-shape {
     opacity: 0.35;
     cursor: pointer;
-    transition: opacity 0.2s ease, filter 0.2s ease;
+    transition: opacity 0.2s ease;
+}
+.tense-shape .tense-visual {
+    transition: filter 0.2s ease;
+}
+@keyframes tense-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
 }
 .tense-shape.tense-selected {
     opacity: 1;
+    transition: none;
+    animation: tense-pulse 2s ease-in-out infinite;
+}
+.tense-shape.tense-selected .tense-visual {
+    filter: drop-shadow(0 0 6px rgba(255,255,255,0.5));
+    stroke-width: 4;
 }
 .tense-shape:hover {
     opacity: 1;
+}
+.tense-shape:hover .tense-visual {
     filter: brightness(1.3) drop-shadow(0 0 6px rgba(255,255,255,0.3));
 }
-.tense-shape.tense-selected:hover {
-    filter: brightness(1.2) drop-shadow(0 0 6px rgba(255,255,255,0.3));
+.tense-shape.tense-selected:hover .tense-visual {
+    filter: brightness(1.2) drop-shadow(0 0 8px rgba(255,255,255,0.5));
+}
+@keyframes tense-correct-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
 }
 .tense-shape.tense-correct {
     opacity: 1;
-    filter: brightness(1.2) drop-shadow(0 0 8px rgba(34,197,94,0.6));
+    transition: none;
+    animation: tense-correct-pulse 2s ease-in-out infinite;
+}
+.tense-shape.tense-correct .tense-visual {
+    filter: brightness(1.2) drop-shadow(0 0 10px rgba(34,197,94,0.7));
+    stroke-width: 4;
 }
 .tense-shape.tense-wrong {
     opacity: 0.8;
-    filter: brightness(1.0) drop-shadow(0 0 8px rgba(239,68,68,0.6));
 }
 """ ]
 
@@ -750,12 +773,12 @@ viewShapeGroup mode vt isSelected onSelect =
     Svg.g [ SA.class className ]
         (case tenseToShape vt of
             SimpleArrowShape ->
-                [ viewSimpleArrow x color
+                [ Svg.g [ SA.class "tense-visual" ] [ viewSimpleArrow x color ]
                 , hitboxSimpleArrow x vt onSelect
                 ]
 
             VShapeShape ->
-                [ viewVShape x color
+                [ Svg.g [ SA.class "tense-visual" ] [ viewVShape x color ]
                 , hitboxVShape x vt onSelect
                 ]
 
@@ -768,7 +791,7 @@ viewShapeGroup mode vt isSelected onSelect =
                         anchorX == pastX || anchorX == presentX || anchorX == futureX
                 in
                 [ viewDropLine anchorX onCircle
-                , viewDiagonalArrow anchorX targetX color
+                , Svg.g [ SA.class "tense-visual" ] [ viewDiagonalArrow anchorX targetX color ]
                 , hitboxDiagonalArrow anchorX targetX vt onSelect
                 ]
 
@@ -777,7 +800,7 @@ viewShapeGroup mode vt isSelected onSelect =
                     ( leftX, rightX ) =
                         triangleLeftAndRight vt
                 in
-                [ viewFilledTriangle leftX rightX color
+                [ Svg.g [ SA.class "tense-visual" ] [ viewFilledTriangle leftX rightX color ]
                 , hitboxFilledTriangle leftX rightX vt onSelect
                 ]
         )
