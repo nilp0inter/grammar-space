@@ -24,18 +24,17 @@ type ApiError
 promptFieldInstruction : String
 promptFieldInstruction =
     """For each sentence, provide a "prompt" field following these rules:
-- Start from the original sentence.
-- REMOVE all auxiliary/helper verbs (e.g. haber, estar, ser, ir a, will, would, shall, have, has, had, be, been, being, am, is, are, was, were). Keep ONLY the main verb.
+- Start from the original sentence and KEEP every non-verb word exactly as-is: time expressions (today, yesterday, tomorrow, by next month, last year, etc.), adverbs, objects, prepositions, conjunctions — everything stays.
+- ONLY remove auxiliary/helper verbs (e.g. haber, estar, ser, ir a, will, would, shall, have, has, had, be, been, being, am, is, are, was, were).
 - Replace the main verb with its base/dictionary form (infinitive) in the original language.
 - Wrap every verb infinitive in double square brackets, like [[verb]].
 - If the subject is implicit or pro-dropped, add it explicitly before the verb.
-- Do NOT include any auxiliary verbs in the prompt — only the main verb infinitive in brackets.
 
 Examples (Spanish):
   Original: "Hoy he comido manzanas" → prompt: "Hoy [[comer]] manzanas"
-  Original: "Estaba lloviendo cuando salí" → prompt: "[[Llover]] cuando [[salir]]"
+  Original: "Ayer estaba lloviendo cuando salí" → prompt: "Ayer [[llover]] cuando yo [[salir]]"
   Original: "Iré al parque mañana" → prompt: "Yo [[ir]] al parque mañana"
-  Original: "Habían estado esperando" → prompt: "Ellos [[esperar]]"
+  Original: "Para el próximo mes habían estado esperando" → prompt: "Para el próximo mes ellos [[esperar]]"
 """
 
 
@@ -71,7 +70,7 @@ buildGenerateSystemPrompt topic tenses =
         tenseCount =
             List.length tenses
     in
-    "You are a language teaching assistant. The user will specify a non-English language. You MUST write a very short everyday story (5-7 sentences, no more than 10) entirely in that language — NOT in English. Every sentence in the \"original\" field must be written in the specified language. The story MUST be about: "
+    "You are a language teaching assistant. The user will specify a language. You MUST write a very short everyday story (5-7 sentences, no more than 10) entirely in that language. Every sentence in the \"original\" field must be written in the specified language. The story MUST be about: "
         ++ topic
         ++ ". Keep each sentence short and simple.\n\nIMPORTANT: You MUST use ONLY the following verb tenses (distribute them as evenly as possible across sentences): "
         ++ tenseLabels
@@ -89,14 +88,16 @@ evaluationSystemPrompt =
     """You are a language teaching assistant evaluating a student's English translation.
 
 You will receive:
-- The original sentence in a non-English language
+- The original sentence
 - The expected English verb tense (e.g. "Simple Past", "Present Perfect")
 - The student's English translation
 
+CRITICAL: The student MUST use the expected verb tense. If they use a different tense — even if the translation conveys the meaning perfectly — rate it as "wrong". The purpose of this exercise is to practice specific verb tenses, so tense accuracy is the primary criterion.
+
 Evaluate the translation as follows:
-- "perfect": The translation is accurate, uses the correct verb tense, and reads naturally.
-- "good": The translation captures the meaning and uses an acceptable verb tense, but has minor issues (e.g. slightly awkward phrasing, minor vocabulary choice).
-- "wrong": The translation uses the wrong verb tense, significantly misses the meaning, or is incomprehensible.
+- "perfect": The translation is accurate, uses the EXACT expected verb tense, and reads naturally.
+- "good": The translation uses the expected verb tense and captures the meaning, but has minor issues (e.g. slightly awkward phrasing, minor vocabulary choice).
+- "wrong": The translation uses the wrong verb tense, significantly misses the meaning, or is incomprehensible. ANY tense mismatch is always "wrong", regardless of how natural or correct the translation otherwise sounds.
 
 Provide a brief explanation (1-2 sentences) of your rating.
 
@@ -112,6 +113,9 @@ Respond with a JSON object containing "rating" and "explanation"."""
 languageNameFromCode : String -> String
 languageNameFromCode code =
     case code of
+        "en" ->
+            "English"
+
         "es" ->
             "Spanish"
 

@@ -86,7 +86,8 @@ type FeedbackPhase
 
 storyLanguages : List { code : String, name : String }
 storyLanguages =
-    [ { code = "es", name = "Spanish" }
+    [ { code = "en", name = "English" }
+    , { code = "es", name = "Spanish" }
     , { code = "fr", name = "French" }
     , { code = "de", name = "German" }
     , { code = "it", name = "Italian" }
