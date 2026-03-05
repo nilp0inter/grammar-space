@@ -6,6 +6,7 @@ import Grammar.Types exposing (Aspect(..), Tense(..), VerbTense, allAspects, all
 import Html exposing (Html, button, div, label, option, p, select, span, text, textarea)
 import Html.Attributes as Attr
 import Html.Events as Events
+import Json.Decode as Decode
 import Story exposing (SavedStory, StoryMode(..))
 
 
@@ -22,6 +23,9 @@ type alias ExerciseConfig msg =
     , onUpdateNarrative : String -> msg
     , onSubmitNarrative : msg
     , onNextItem : msg
+    , onPrevItem : msg
+    , onAcceptTense : msg
+    , onFinishExercise : msg
     , onResetExercise : msg
     , timelineView : Html msg
     , exerciseInputMode : ExerciseInputMode
@@ -558,17 +562,20 @@ viewExerciseActive config state =
     case maybeItem of
         Just item ->
             case state.kind of
-                TenseIdentification _ ->
-                    [ viewSentenceCard item state.phase progress "Click the correct verb tense on the timeline above"
+                TenseIdentification ti ->
+                    [ viewSentenceCard item state.phase progress "Click a verb tense on the timeline"
                     , config.timelineView
-                    , viewTenseIdFeedback item state config.onNextItem
+                    , viewTenseIdInteraction item state ti config.onAcceptTense
+                    , viewTenseIdReadonlyFeedback item state ti
+                    , viewNavigationBar config state
                     ]
 
                 Translation ts ->
                     [ viewTranslationSentenceCard item progress
                     , config.timelineView
-                    , viewTranslationInput config item ts
-                    , viewTranslationFeedback ts state.currentIndex config.onNextItem
+                    , viewTranslationInteraction config item state ts
+                    , viewTranslationReadonlyFeedback ts state.currentIndex
+                    , viewNavigationBar config state
                     ]
 
         Nothing ->
@@ -608,15 +615,77 @@ viewTranslationSentenceCard item progress =
         ]
 
 
-viewTranslationInput : ExerciseConfig msg -> ExerciseItem -> TranslationState -> Html msg
-viewTranslationInput config item ts =
+onEnter : msg -> Html.Attribute msg
+onEnter msg =
+    Events.on "keydown"
+        (Decode.field "key" Decode.string
+            |> Decode.andThen
+                (\key ->
+                    if key == "Enter" then
+                        Decode.succeed msg
+
+                    else
+                        Decode.fail "not enter"
+                )
+        )
+
+
+viewTenseIdInteraction : ExerciseItem -> ExerciseState -> { answers : Array.Array (Maybe VerbTense), selectedTense : Maybe VerbTense } -> msg -> Html msg
+viewTenseIdInteraction item state ti onAccept =
+    case state.phase of
+        Answering ->
+            case ti.selectedTense of
+                Just selectedVt ->
+                    div [ Attr.class "flex justify-center w-full" ]
+                        [ button
+                            [ Attr.class "px-6 py-2 rounded-full bg-emerald-600 text-white font-medium hover:bg-emerald-500 transition-colors"
+                            , Events.onClick onAccept
+                            ]
+                            [ text ("Accept: " ++ verbTenseLabel selectedVt) ]
+                        ]
+
+                Nothing ->
+                    text ""
+
+        _ ->
+            text ""
+
+
+viewTenseIdReadonlyFeedback : ExerciseItem -> ExerciseState -> { answers : Array.Array (Maybe VerbTense), selectedTense : Maybe VerbTense } -> Html msg
+viewTenseIdReadonlyFeedback item state ti =
+    case state.phase of
+        ShowingFeedback ->
+            let
+                userAnswer =
+                    Array.get state.currentIndex ti.answers
+                        |> Maybe.andThen identity
+
+                isCorrect =
+                    userAnswer == Just item.correctTense
+            in
+            div [ Attr.class "flex flex-col items-center gap-3 w-full" ]
+                [ if isCorrect then
+                    div [ Attr.class "px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm text-center w-full" ]
+                        [ text ("Correct! " ++ item.explanation) ]
+
+                  else
+                    div [ Attr.class "px-4 py-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm text-center w-full" ]
+                        [ text ("The correct answer is " ++ verbTenseLabel item.correctTense ++ ". " ++ item.explanation) ]
+                ]
+
+        _ ->
+            text ""
+
+
+viewTranslationInteraction : ExerciseConfig msg -> ExerciseItem -> ExerciseState -> TranslationState -> Html msg
+viewTranslationInteraction config item state ts =
     let
         currentInput =
-            Array.get (Maybe.withDefault 0 (config.exerciseState |> Maybe.map .currentIndex)) ts.inputs
+            Array.get state.currentIndex ts.inputs
                 |> Maybe.withDefault ""
 
         currentEval =
-            Array.get (Maybe.withDefault 0 (config.exerciseState |> Maybe.map .currentIndex)) ts.evaluations
+            Array.get state.currentIndex ts.evaluations
                 |> Maybe.andThen identity
 
         hasEvaluation =
@@ -632,6 +701,11 @@ viewTranslationInput config item ts =
             , Attr.value currentInput
             , Attr.disabled hasEvaluation
             , Events.onInput config.onUpdateTranslationInput
+            , if not hasEvaluation && not (String.isEmpty (String.trim currentInput)) && not ts.evaluating then
+                onEnter config.onSubmitTranslation
+
+              else
+                Attr.class ""
             ]
             []
         , if hasEvaluation then
@@ -658,8 +732,8 @@ viewTranslationInput config item ts =
         ]
 
 
-viewTranslationFeedback : TranslationState -> Int -> msg -> Html msg
-viewTranslationFeedback ts currentIndex onNext =
+viewTranslationReadonlyFeedback : TranslationState -> Int -> Html msg
+viewTranslationReadonlyFeedback ts currentIndex =
     let
         currentEval =
             Array.get currentIndex ts.evaluations
@@ -695,51 +769,98 @@ viewTranslationFeedback ts currentIndex onNext =
                     [ span [ Attr.class "font-semibold" ] [ text feedbackStyle.label ]
                     , text (" " ++ explanation)
                     ]
-                , button
-                    [ Attr.class "px-6 py-2 rounded-full bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
-                    , Events.onClick onNext
-                    ]
-                    [ text "Next" ]
                 ]
 
         Nothing ->
             text ""
 
 
-viewTenseIdFeedback : ExerciseItem -> ExerciseState -> msg -> Html msg
-viewTenseIdFeedback item state onNext =
-    case state.phase of
-        ShowingFeedback ->
-            case state.kind of
-                TenseIdentification ti ->
+viewNavigationBar : ExerciseConfig msg -> ExerciseState -> Html msg
+viewNavigationBar config state =
+    let
+        total =
+            itemCount state
+
+        prevDisabled =
+            isFirstItem state
+
+        onLast =
+            isLastItem state
+
+        allAnswered =
+            allItemsAnswered state
+
+        dots =
+            List.map
+                (\idx ->
                     let
-                        userAnswer =
-                            Array.get state.currentIndex ti.answers
-                                |> Maybe.andThen identity
+                        isCurrent =
+                            idx == state.currentIndex
 
-                        isCorrect =
-                            userAnswer == Just item.correctTense
+                        correctness =
+                            isItemCorrect idx state
+
+                        dotColor =
+                            if isCurrent then
+                                "bg-indigo-400 ring-2 ring-indigo-400/50"
+
+                            else
+                                case correctness of
+                                    Just True ->
+                                        "bg-emerald-500"
+
+                                    Just False ->
+                                        "bg-rose-500"
+
+                                    Nothing ->
+                                        "bg-slate-600"
                     in
-                    div [ Attr.class "flex flex-col items-center gap-3 w-full" ]
-                        [ if isCorrect then
-                            div [ Attr.class "px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm text-center w-full" ]
-                                [ text ("Correct! " ++ item.explanation) ]
+                    span [ Attr.class ("w-2.5 h-2.5 rounded-full " ++ dotColor) ] []
+                )
+                (List.range 0 (total - 1))
+    in
+    div [ Attr.class "flex flex-col items-center gap-2 w-full pt-2" ]
+        [ div [ Attr.class "flex items-center justify-center gap-4" ]
+            [ button
+                [ Attr.class
+                    (if prevDisabled then
+                        "px-4 py-2 rounded-full bg-slate-800 text-slate-600 font-medium cursor-not-allowed"
 
-                          else
-                            div [ Attr.class "px-4 py-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm text-center w-full" ]
-                                [ text ("The correct answer is " ++ verbTenseLabel item.correctTense ++ ". " ++ item.explanation) ]
-                        , button
-                            [ Attr.class "px-6 py-2 rounded-full bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
-                            , Events.onClick onNext
-                            ]
-                            [ text "Next" ]
-                        ]
+                     else
+                        "px-4 py-2 rounded-full bg-slate-700 text-slate-300 font-medium hover:bg-slate-600 transition-colors"
+                    )
+                , Attr.disabled prevDisabled
+                , Events.onClick config.onPrevItem
+                ]
+                [ text "Prev" ]
+            , div [ Attr.class "flex items-center gap-1.5" ] dots
+            , if onLast then
+                button
+                    [ Attr.class
+                        (if allAnswered then
+                            "px-4 py-2 rounded-full bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
 
-                Translation _ ->
-                    text ""
+                         else
+                            "px-4 py-2 rounded-full bg-slate-800 text-slate-600 font-medium cursor-not-allowed"
+                        )
+                    , Attr.disabled (not allAnswered)
+                    , Events.onClick config.onFinishExercise
+                    ]
+                    [ text "Finish" ]
 
-        _ ->
-            text ""
+              else
+                button
+                    [ Attr.class "px-4 py-2 rounded-full bg-slate-700 text-slate-300 font-medium hover:bg-slate-600 transition-colors"
+                    , Events.onClick config.onNextItem
+                    ]
+                    [ text "Next" ]
+            ]
+        , button
+            [ Attr.class "text-xs text-slate-600 hover:text-rose-400 transition-colors"
+            , Events.onClick config.onResetExercise
+            ]
+            [ text "Abandon exercise" ]
+        ]
 
 
 viewScoreSummary : ExerciseState -> msg -> Html msg

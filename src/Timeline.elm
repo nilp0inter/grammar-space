@@ -12,6 +12,7 @@ import Svg.Events as SE
 type TimelineMode
     = CalculatorDisplay
     | ExerciseBlank
+    | ExerciseSelected VerbTense
     | ExerciseFeedback { correct : VerbTense, userAnswer : Maybe VerbTense }
 
 
@@ -777,6 +778,13 @@ shapeClassName mode vt isSelected =
         ExerciseBlank ->
             "tense-shape"
 
+        ExerciseSelected selectedVt ->
+            if vt == selectedVt then
+                "tense-shape tense-selected"
+
+            else
+                "tense-shape"
+
         ExerciseFeedback { correct, userAnswer } ->
             if vt == correct then
                 "tense-shape tense-correct"
@@ -1072,6 +1080,9 @@ view config =
         showPointer =
             case config.mode of
                 CalculatorDisplay ->
+                    True
+
+                ExerciseSelected _ ->
                     True
 
                 ExerciseFeedback _ ->

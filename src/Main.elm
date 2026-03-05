@@ -5,7 +5,8 @@ import Animator.Inline
 import Api
 import Array
 import Browser
-import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExerciseKind(..), ExercisePhase(..), ExerciseState, ExerciseTypeChoice(..), StoryTopic(..), TranslationEvaluation(..), advanceToNext, currentItem, initTenseIdExercise, initTranslationExercise, recordTenseAnswer, recordTranslationEvaluation, setTranslationEvaluating, storyTopics, updateTranslationInput)
+import Browser.Events
+import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExerciseKind(..), ExercisePhase(..), ExerciseState, ExerciseTypeChoice(..), StoryTopic(..), TranslationEvaluation(..), allItemsAnswered, clearSelectedTense, currentItem, getSelectedTense, goToItem, initTenseIdExercise, initTranslationExercise, isItemAnswered, isLastItem, recordTenseAnswer, recordTranslationEvaluation, selectTense, setTranslationEvaluating, storyTopics, updateTranslationInput)
 import Exercise.View exposing (viewExercise)
 import Grammar.Engine exposing (nullArgs)
 import Grammar.Lexicon as Lexicon
@@ -177,7 +178,10 @@ type Msg
     | GenerateResult (Result Api.ApiError (List ExerciseItem))
     | ModelsResult (Result Api.ApiError (List Api.LLMModel))
     | ExerciseSelectTense VerbTense
+    | AcceptTenseAnswer
+    | PrevExerciseItem
     | NextExerciseItem
+    | FinishExercise
     | ResetExercise
     | SelectModel String
     | SetExerciseInputMode ExerciseInputMode
@@ -194,6 +198,7 @@ type Msg
     | ToggleStoryTense VerbTense
     | ToggleTenseColumn Tense
     | ToggleTenseRow Aspect
+    | KeyPressed String
 
 
 
@@ -448,6 +453,55 @@ handleLLMError err model =
 
 
 
+navigationTimelines : ExerciseState -> Model -> ( Animator.Timeline FeedbackPhase, Animator.Timeline Tense )
+navigationTimelines newState model =
+    let
+        answered =
+            isItemAnswered newState.currentIndex newState
+
+        newFeedbackTl =
+            if answered then
+                model.feedbackTimeline |> Animator.go (Animator.millis 300) FeedbackShown
+
+            else
+                model.feedbackTimeline |> Animator.go (Animator.millis 200) FeedbackHidden
+
+        newExTenseTl =
+            case newState.kind of
+                Translation _ ->
+                    let
+                        nextTense =
+                            currentItem newState
+                                |> Maybe.map .correctTense
+                                |> Maybe.withDefault SimplePresent
+
+                        nextSpec =
+                            verbTenseToSpec nextTense
+                    in
+                    model.exerciseTenseTimeline
+                        |> Animator.go (Animator.millis 400) nextSpec.tense
+
+                TenseIdentification ti ->
+                    if answered then
+                        let
+                            correctTense =
+                                currentItem newState
+                                    |> Maybe.map .correctTense
+                                    |> Maybe.withDefault SimplePresent
+
+                            correctSpec =
+                                verbTenseToSpec correctTense
+                        in
+                        model.exerciseTenseTimeline
+                            |> Animator.go (Animator.millis 400) correctSpec.tense
+
+                    else
+                        model.exerciseTenseTimeline
+    in
+    ( newFeedbackTl, newExTenseTl )
+
+
+
 -- =========================================================
 -- Update
 -- =========================================================
@@ -699,36 +753,28 @@ update msg model =
                         TenseIdentification _ ->
                             case state.phase of
                                 Answering ->
-                                    let
-                                        newState =
-                                            recordTenseAnswer vt state
+                                    if getSelectedTense state == Just vt then
+                                        -- Same tense clicked again (double-click) → accept
+                                        update AcceptTenseAnswer model
 
-                                        item =
-                                            currentItem state
+                                    else
+                                        let
+                                            newState =
+                                                selectTense vt state
 
-                                        correctTense =
-                                            item
-                                                |> Maybe.map .correctTense
-                                                |> Maybe.withDefault SimplePresent
+                                            selectedSpec =
+                                                verbTenseToSpec vt
 
-                                        correctSpec =
-                                            verbTenseToSpec correctTense
-
-                                        newExTenseTimeline =
-                                            model.exerciseTenseTimeline
-                                                |> Animator.go (Animator.millis 400) correctSpec.tense
-
-                                        newFeedbackTimeline =
-                                            model.feedbackTimeline
-                                                |> Animator.go (Animator.millis 300) FeedbackShown
-                                    in
-                                    ( { model
-                                        | exerciseState = Just newState
-                                        , exerciseTenseTimeline = newExTenseTimeline
-                                        , feedbackTimeline = newFeedbackTimeline
-                                      }
-                                    , Cmd.none
-                                    )
+                                            newExTenseTimeline =
+                                                model.exerciseTenseTimeline
+                                                    |> Animator.go (Animator.millis 400) selectedSpec.tense
+                                        in
+                                        ( { model
+                                            | exerciseState = Just newState
+                                            , exerciseTenseTimeline = newExTenseTimeline
+                                          }
+                                        , Cmd.none
+                                        )
 
                                 _ ->
                                     ( model, Cmd.none )
@@ -739,42 +785,106 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
+        AcceptTenseAnswer ->
+            case model.exerciseState of
+                Just state ->
+                    case getSelectedTense state of
+                        Just _ ->
+                            let
+                                newState =
+                                    recordTenseAnswer state
+
+                                correctTense =
+                                    currentItem state
+                                        |> Maybe.map .correctTense
+                                        |> Maybe.withDefault SimplePresent
+
+                                correctSpec =
+                                    verbTenseToSpec correctTense
+
+                                newExTenseTimeline =
+                                    model.exerciseTenseTimeline
+                                        |> Animator.go (Animator.millis 400) correctSpec.tense
+
+                                newFeedbackTimeline =
+                                    model.feedbackTimeline
+                                        |> Animator.go (Animator.millis 300) FeedbackShown
+                            in
+                            ( { model
+                                | exerciseState = Just newState
+                                , exerciseTenseTimeline = newExTenseTimeline
+                                , feedbackTimeline = newFeedbackTimeline
+                              }
+                            , Cmd.none
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        PrevExerciseItem ->
+            case model.exerciseState of
+                Just state ->
+                    let
+                        targetIdx =
+                            state.currentIndex - 1
+
+                        newState =
+                            goToItem targetIdx state
+
+                        ( newFeedbackTl, newExTenseTl ) =
+                            navigationTimelines newState model
+                    in
+                    ( { model
+                        | exerciseState = Just newState
+                        , feedbackTimeline = newFeedbackTl
+                        , exerciseTenseTimeline = newExTenseTl
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
         NextExerciseItem ->
             case model.exerciseState of
                 Just state ->
                     let
+                        targetIdx =
+                            state.currentIndex + 1
+
                         newState =
-                            advanceToNext state
+                            goToItem targetIdx state
 
-                        newFeedbackTimeline =
-                            model.feedbackTimeline
-                                |> Animator.go (Animator.millis 200) FeedbackHidden
-
-                        newExTenseTimeline =
-                            case newState.kind of
-                                Translation _ ->
-                                    let
-                                        nextTense =
-                                            currentItem newState
-                                                |> Maybe.map .correctTense
-                                                |> Maybe.withDefault SimplePresent
-
-                                        nextSpec =
-                                            verbTenseToSpec nextTense
-                                    in
-                                    model.exerciseTenseTimeline
-                                        |> Animator.go (Animator.millis 400) nextSpec.tense
-
-                                TenseIdentification _ ->
-                                    model.exerciseTenseTimeline
+                        ( newFeedbackTl, newExTenseTl ) =
+                            navigationTimelines newState model
                     in
                     ( { model
                         | exerciseState = Just newState
-                        , feedbackTimeline = newFeedbackTimeline
-                        , exerciseTenseTimeline = newExTenseTimeline
+                        , feedbackTimeline = newFeedbackTl
+                        , exerciseTenseTimeline = newExTenseTl
                       }
                     , Cmd.none
                     )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        FinishExercise ->
+            case model.exerciseState of
+                Just state ->
+                    if allItemsAnswered state then
+                        ( { model
+                            | exerciseState = Just { state | phase = ExerciseComplete }
+                            , feedbackTimeline = model.feedbackTimeline |> Animator.go (Animator.millis 200) FeedbackHidden
+                          }
+                        , Cmd.none
+                        )
+
+                    else
+                        ( model, Cmd.none )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -1028,6 +1138,27 @@ update msg model =
             in
             ( { model | selectedTenses = newTenses }, Cmd.none )
 
+        KeyPressed key ->
+            case ( model.appMode, model.exerciseState ) of
+                ( ExerciseMode, Just state ) ->
+                    case state.phase of
+                        ExerciseComplete ->
+                            ( model, Cmd.none )
+
+                        _ ->
+                            case key of
+                                "ArrowRight" ->
+                                    update NextExerciseItem model
+
+                                "ArrowLeft" ->
+                                    update PrevExerciseItem model
+
+                                _ ->
+                                    ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
 
 togglePerfect : Model -> Model
 togglePerfect model =
@@ -1173,6 +1304,8 @@ subscriptions model =
     Sub.batch
         [ Animator.toSubscription Tick model animator
         , oauthKeyReceived OAuthKeyReceived
+        , Browser.Events.onKeyDown
+            (Decode.field "key" Decode.string |> Decode.map KeyPressed)
         ]
 
 
@@ -1267,12 +1400,6 @@ viewExerciseTab model =
                 Just state ->
                     case state.kind of
                         Translation _ ->
-                            let
-                                correctTense =
-                                    currentItem state
-                                        |> Maybe.map .correctTense
-                                        |> Maybe.withDefault SimplePresent
-                            in
                             Timeline.CalculatorDisplay
 
                         TenseIdentification ti ->
@@ -1293,7 +1420,15 @@ viewExerciseTab model =
                                         , userAnswer = userAnswer
                                         }
 
-                                _ ->
+                                Answering ->
+                                    case ti.selectedTense of
+                                        Just selectedVt ->
+                                            Timeline.ExerciseSelected selectedVt
+
+                                        Nothing ->
+                                            Timeline.ExerciseBlank
+
+                                ExerciseComplete ->
                                     Timeline.ExerciseBlank
 
                 Nothing ->
@@ -1308,14 +1443,22 @@ viewExerciseTab model =
                                 |> Maybe.map (.correctTense >> verbTenseToSpec)
                                 |> Maybe.withDefault { tense = Present, perfect = False, progressive = False }
 
-                        TenseIdentification _ ->
+                        TenseIdentification ti ->
                             case state.phase of
                                 ShowingFeedback ->
                                     currentItem state
                                         |> Maybe.map (.correctTense >> verbTenseToSpec)
                                         |> Maybe.withDefault { tense = Present, perfect = False, progressive = False }
 
-                                _ ->
+                                Answering ->
+                                    case ti.selectedTense of
+                                        Just selectedVt ->
+                                            verbTenseToSpec selectedVt
+
+                                        Nothing ->
+                                            { tense = Present, perfect = False, progressive = False }
+
+                                ExerciseComplete ->
                                     { tense = Present, perfect = False, progressive = False }
 
                 Nothing ->
@@ -1347,6 +1490,9 @@ viewExerciseTab model =
         , onUpdateNarrative = UpdateNarrativeInput
         , onSubmitNarrative = SubmitNarrative
         , onNextItem = NextExerciseItem
+        , onPrevItem = PrevExerciseItem
+        , onAcceptTense = AcceptTenseAnswer
+        , onFinishExercise = FinishExercise
         , onResetExercise = ResetExercise
         , timelineView = timelineHtml
         , exerciseInputMode = model.exerciseInputMode

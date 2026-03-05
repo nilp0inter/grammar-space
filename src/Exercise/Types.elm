@@ -30,7 +30,7 @@ type alias ExerciseItem =
 
 
 type ExerciseKind
-    = TenseIdentification { answers : Array (Maybe VerbTense) }
+    = TenseIdentification { answers : Array (Maybe VerbTense), selectedTense : Maybe VerbTense }
     | Translation TranslationState
 
 
@@ -60,7 +60,7 @@ initTenseIdExercise items =
     { items = Array.fromList items
     , currentIndex = 0
     , phase = Answering
-    , kind = TenseIdentification { answers = Array.repeat (List.length items) Nothing }
+    , kind = TenseIdentification { answers = Array.repeat (List.length items) Nothing, selectedTense = Nothing }
     }
 
 
@@ -83,14 +83,24 @@ currentItem state =
     Array.get state.currentIndex state.items
 
 
-recordTenseAnswer : VerbTense -> ExerciseState -> ExerciseState
-recordTenseAnswer vt state =
+recordTenseAnswer : ExerciseState -> ExerciseState
+recordTenseAnswer state =
     case state.kind of
         TenseIdentification ti ->
-            { state
-                | kind = TenseIdentification { ti | answers = Array.set state.currentIndex (Just vt) ti.answers }
-                , phase = ShowingFeedback
-            }
+            case ti.selectedTense of
+                Just vt ->
+                    { state
+                        | kind =
+                            TenseIdentification
+                                { ti
+                                    | answers = Array.set state.currentIndex (Just vt) ti.answers
+                                    , selectedTense = Nothing
+                                }
+                        , phase = ShowingFeedback
+                    }
+
+                Nothing ->
+                    state
 
         Translation _ ->
             state
@@ -136,17 +146,122 @@ recordTranslationEvaluation eval state =
             state
 
 
-advanceToNext : ExerciseState -> ExerciseState
-advanceToNext state =
+goToItem : Int -> ExerciseState -> ExerciseState
+goToItem idx state =
     let
-        nextIdx =
-            state.currentIndex + 1
-    in
-    if nextIdx >= Array.length state.items then
-        { state | phase = ExerciseComplete }
+        clamped =
+            clamp 0 (Array.length state.items - 1) idx
 
-    else
-        { state | currentIndex = nextIdx, phase = Answering }
+        phase =
+            if isItemAnswered clamped state then
+                ShowingFeedback
+
+            else
+                Answering
+    in
+    { state
+        | currentIndex = clamped
+        , phase = phase
+        , kind = clearSelectedTenseKind state.kind
+    }
+
+
+selectTense : VerbTense -> ExerciseState -> ExerciseState
+selectTense vt state =
+    case state.kind of
+        TenseIdentification ti ->
+            { state | kind = TenseIdentification { ti | selectedTense = Just vt } }
+
+        Translation _ ->
+            state
+
+
+clearSelectedTense : ExerciseState -> ExerciseState
+clearSelectedTense state =
+    { state | kind = clearSelectedTenseKind state.kind }
+
+
+clearSelectedTenseKind : ExerciseKind -> ExerciseKind
+clearSelectedTenseKind kind =
+    case kind of
+        TenseIdentification ti ->
+            TenseIdentification { ti | selectedTense = Nothing }
+
+        Translation _ ->
+            kind
+
+
+getSelectedTense : ExerciseState -> Maybe VerbTense
+getSelectedTense state =
+    case state.kind of
+        TenseIdentification ti ->
+            ti.selectedTense
+
+        Translation _ ->
+            Nothing
+
+
+isItemAnswered : Int -> ExerciseState -> Bool
+isItemAnswered idx state =
+    case state.kind of
+        TenseIdentification ti ->
+            Array.get idx ti.answers
+                |> Maybe.andThen identity
+                |> (/=) Nothing
+
+        Translation ts ->
+            Array.get idx ts.evaluations
+                |> Maybe.andThen identity
+                |> (/=) Nothing
+
+
+isItemCorrect : Int -> ExerciseState -> Maybe Bool
+isItemCorrect idx state =
+    let
+        item =
+            Array.get idx state.items
+    in
+    case state.kind of
+        TenseIdentification ti ->
+            Array.get idx ti.answers
+                |> Maybe.andThen identity
+                |> Maybe.map2 (\it ans -> ans == it.correctTense) item
+
+        Translation ts ->
+            Array.get idx ts.evaluations
+                |> Maybe.andThen identity
+                |> Maybe.map
+                    (\eval ->
+                        case eval of
+                            Perfect _ ->
+                                True
+
+                            Good _ ->
+                                True
+
+                            Wrong _ ->
+                                False
+                    )
+
+
+allItemsAnswered : ExerciseState -> Bool
+allItemsAnswered state =
+    List.all (\idx -> isItemAnswered idx state) (List.range 0 (Array.length state.items - 1))
+
+
+itemCount : ExerciseState -> Int
+itemCount state =
+    Array.length state.items
+
+
+isLastItem : ExerciseState -> Bool
+isLastItem state =
+    state.currentIndex >= Array.length state.items - 1
+
+
+isFirstItem : ExerciseState -> Bool
+isFirstItem state =
+    state.currentIndex <= 0
 
 
 scoreExercise : ExerciseState -> { correct : Int, total : Int }
