@@ -46,6 +46,7 @@ Your task:
 1. Split the narrative into individual sentences.
 2. For each sentence, determine the primary English verb tense that would be used to translate it.
 3. Provide a brief explanation (1 sentence) of why that tense applies.
+4. Provide a correct English translation of the sentence.
 
 The verb tense MUST be one of these exact values:
 SimplePast, PastContinuous, PastPerfect, PastPerfectContinuous,
@@ -78,7 +79,7 @@ buildGenerateSystemPrompt topic tenses =
         ++ String.fromInt (min tenseCount 4)
         ++ " different tenses.\n\nAfter writing the story, analyze each sentence and determine the primary English verb tense that would be used to translate it.\n\nThe verb tense MUST be one of these exact values:\n"
         ++ tenseEnums
-        ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\n"
+        ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\nThe \"translation\" field should contain a correct English translation of the sentence.\n\n"
         ++ promptFieldInstruction
         ++ "\nRespond with a JSON object containing a \"sentences\" array. The array MUST have at most 10 items."
 
@@ -88,7 +89,8 @@ evaluationSystemPrompt =
     """You are a language teaching assistant evaluating a student's English translation.
 
 You will receive:
-- The original sentence
+- The original sentence in a non-English language
+- The correct English translation (the reference answer)
 - The expected English verb tense (e.g. "Simple Past", "Present Perfect")
 - The student's English translation
 
@@ -207,9 +209,10 @@ responseSchema =
                                                                 ]
                                                           )
                                                         , ( "explanation", Encode.object [ ( "type", Encode.string "string" ) ] )
+                                                        , ( "translation", Encode.object [ ( "type", Encode.string "string" ) ] )
                                                         ]
                                                   )
-                                                , ( "required", Encode.list Encode.string [ "original", "prompt", "verbTense", "explanation" ] )
+                                                , ( "required", Encode.list Encode.string [ "original", "prompt", "verbTense", "explanation", "translation" ] )
                                                 , ( "additionalProperties", Encode.bool False )
                                                 ]
                                           )
@@ -240,11 +243,12 @@ decodeLLMResponse =
 
 decodeExerciseItem : Decode.Decoder ExerciseItem
 decodeExerciseItem =
-    Decode.map4 ExerciseItem
+    Decode.map5 ExerciseItem
         (Decode.field "original" Decode.string)
         (Decode.field "prompt" Decode.string)
         (Decode.field "verbTense" decodeVerbTense)
         (Decode.field "explanation" Decode.string)
+        (Decode.field "translation" Decode.string)
 
 
 decodeVerbTense : Decode.Decoder VerbTense
@@ -473,15 +477,16 @@ evaluateTranslation :
     { apiKey : String
     , model : String
     , originalSentence : String
+    , correctTranslation : String
     , expectedTense : String
     , studentTranslation : String
     , onResult : Result ApiError EvaluationResult -> msg
     }
     -> Cmd msg
-evaluateTranslation { apiKey, model, originalSentence, expectedTense, studentTranslation, onResult } =
+evaluateTranslation { apiKey, model, originalSentence, correctTranslation, expectedTense, studentTranslation, onResult } =
     let
         userMessage =
-            "Original sentence: " ++ originalSentence ++ "\nExpected English verb tense: " ++ expectedTense ++ "\nStudent's translation: " ++ studentTranslation
+            "Original sentence: " ++ originalSentence ++ "\nCorrect English translation: " ++ correctTranslation ++ "\nExpected English verb tense: " ++ expectedTense ++ "\nStudent's translation: " ++ studentTranslation
     in
     Http.request
         { method = "POST"

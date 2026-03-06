@@ -26,6 +26,7 @@ type alias ExerciseItem =
     , prompt : String
     , correctTense : VerbTense
     , explanation : String
+    , translation : String
     }
 
 

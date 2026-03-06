@@ -572,7 +572,13 @@ viewExerciseActive config state =
                     ]
 
                 Translation ts ->
-                    [ viewTranslationSentenceCard item progress
+                    let
+                        hasEval =
+                            Array.get state.currentIndex ts.evaluations
+                                |> Maybe.andThen identity
+                                |> (/=) Nothing
+                    in
+                    [ viewTranslationSentenceCard item progress hasEval
                     , config.timelineView
                     , viewTranslationInteraction config item state ts
                     , viewTranslationReadonlyFeedback ts state.currentIndex
@@ -602,15 +608,24 @@ viewSentenceCard item phase progress instruction =
         ]
 
 
-viewTranslationSentenceCard : ExerciseItem -> String -> Html msg
-viewTranslationSentenceCard item progress =
+viewTranslationSentenceCard : ExerciseItem -> String -> Bool -> Html msg
+viewTranslationSentenceCard item progress showTranslation =
     div [ Attr.class "flex flex-col items-center gap-3 w-full" ]
         [ span [ Attr.class "text-xs text-slate-500 uppercase tracking-wider" ]
             [ text ("Sentence " ++ progress) ]
-        , div [ Attr.class "flex flex-wrap items-center justify-center gap-2 min-h-[4rem] p-6 rounded-xl bg-slate-800/50 w-full" ]
-            [ span [ Attr.class "text-lg text-white font-medium text-center" ]
+        , div [ Attr.class "flex flex-col flex-wrap items-center justify-center gap-2 min-h-[4rem] p-6 rounded-xl bg-slate-800/50 w-full" ]
+            ([ span [ Attr.class "text-lg text-white font-medium text-center" ]
                 (Prompt.viewPrompt item.prompt)
-            ]
+             ]
+                ++ (if showTranslation && not (String.isEmpty item.translation) then
+                        [ span [ Attr.class "text-lg text-white font-medium text-center" ]
+                            [ text item.translation ]
+                        ]
+
+                    else
+                        []
+                   )
+            )
         , p [ Attr.class "text-slate-400 text-sm" ]
             [ text "Translate this sentence into English (check the timeline for the correct tense)" ]
         ]
