@@ -319,7 +319,7 @@ viewTopicSelector config =
         ([ label [ Attr.class "text-xs font-medium text-slate-500 uppercase tracking-wider" ]
             [ text "Topic" ]
          , select
-            [ Attr.class "w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 appearance-none"
+            [ Attr.class "w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 cursor-pointer"
             , Attr.value currentTopicId
             , Events.onInput onTopicChange
             ]
@@ -347,6 +347,7 @@ viewTopicSelector config =
                             , Attr.placeholder "Enter your custom topic..."
                             , Attr.value config.customTopicInput
                             , Events.onInput config.onUpdateCustomTopic
+                            , onEnter config.onSubmitGenerateStory
                             ]
                             []
                         ]
