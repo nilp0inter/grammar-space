@@ -357,6 +357,33 @@ translationScore state =
             { perfect = 0, good = 0, wrong = 0, total = Array.length state.items }
 
 
+type Pick
+    = OnlyFirst
+    | OnlySecond
+    | Both
+
+
+type alias SentenceStyleOptions =
+    { voice : Pick
+    , polarity : Pick
+    , clauseType : Pick
+    }
+
+
+defaultSentenceStyle : SentenceStyleOptions
+defaultSentenceStyle =
+    { voice = OnlyFirst
+    , polarity = OnlyFirst
+    , clauseType = OnlyFirst
+    }
+
+
+type SentenceFeature
+    = VoiceFeature
+    | PolarityFeature
+    | ClauseTypeFeature
+
+
 type StoryTopic
     = PredefinedTopic String
     | CustomTopic

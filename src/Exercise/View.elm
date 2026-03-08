@@ -50,6 +50,8 @@ type alias ExerciseConfig msg =
     , onToggleStoryTense : VerbTense -> msg
     , onToggleTenseColumn : Tense -> msg
     , onToggleTenseRow : Aspect -> msg
+    , sentenceStyle : SentenceStyleOptions
+    , onSetSentenceStyle : SentenceFeature -> Pick -> msg
     }
 
 
@@ -198,6 +200,7 @@ viewGenerateStoryInput config =
             ]
         , viewTopicSelector config
         , viewTenseGrid config
+        , viewSentenceStyleOptions config
         ]
 
 
@@ -472,6 +475,57 @@ viewTenseGrid config =
                     )
                     allAspects
             )
+        ]
+
+
+
+-- =========================================================
+-- Sentence Style Options
+-- =========================================================
+
+
+viewSentenceStyleOptions : ExerciseConfig msg -> Html msg
+viewSentenceStyleOptions config =
+    div [ Attr.class "flex flex-col gap-2 w-full max-w-lg" ]
+        [ label [ Attr.class "text-xs font-medium text-slate-500 uppercase tracking-wider" ]
+            [ text "Sentence Style" ]
+        , featureRow "Voice" config.sentenceStyle.voice VoiceFeature "Active" "Passive" config.onSetSentenceStyle
+        , featureRow "Polarity" config.sentenceStyle.polarity PolarityFeature "Affirmative" "Negative" config.onSetSentenceStyle
+        , featureRow "Clause Type" config.sentenceStyle.clauseType ClauseTypeFeature "Declarative" "Question" config.onSetSentenceStyle
+        ]
+
+
+featureRow : String -> Pick -> SentenceFeature -> String -> String -> (SentenceFeature -> Pick -> msg) -> Html msg
+featureRow groupLabel currentChoice feature labelA labelB onSet =
+    let
+        pill choice labelText =
+            let
+                isActive =
+                    currentChoice == choice
+
+                baseClass =
+                    "px-4 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer select-none"
+
+                colorClass =
+                    if isActive then
+                        "bg-indigo-600 text-white"
+
+                    else
+                        "text-slate-400 hover:text-slate-200"
+            in
+            span
+                [ Attr.class (baseClass ++ " " ++ colorClass)
+                , Events.onClick (onSet feature choice)
+                ]
+                [ text labelText ]
+    in
+    div [ Attr.class "flex items-center gap-3" ]
+        [ span [ Attr.class "text-xs text-slate-400 w-20 text-right" ] [ text groupLabel ]
+        , div [ Attr.class "inline-flex rounded-full bg-slate-800/50 p-0.5" ]
+            [ pill OnlyFirst labelA
+            , pill OnlySecond labelB
+            , pill Both "Both"
+            ]
         ]
 
 

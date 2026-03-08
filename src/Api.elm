@@ -1,6 +1,6 @@
 module Api exposing (ApiError(..), EvaluationResult, LLMModel, analyzeNarrative, errorToString, evaluateTranslation, fetchModels, generateStory)
 
-import Exercise.Types exposing (ExerciseItem)
+import Exercise.Types exposing (ExerciseItem, Pick(..), SentenceStyleOptions)
 import Grammar.Types exposing (VerbTense, verbTenseFromString, verbTenseLabel, verbTenseToString)
 import Http
 import Json.Decode as Decode
@@ -59,8 +59,47 @@ SimpleFuture, FutureContinuous, FuturePerfect, FuturePerfectContinuous
 Respond with a JSON object containing a "sentences" array."""
 
 
-buildGenerateSystemPrompt : String -> List VerbTense -> String
-buildGenerateSystemPrompt topic tenses =
+buildStyleInstructions : SentenceStyleOptions -> String
+buildStyleInstructions style =
+    let
+        voiceInstr =
+            case style.voice of
+                OnlyFirst ->
+                    "Write ALL sentences in active voice."
+
+                OnlySecond ->
+                    "Write ALL sentences in passive voice."
+
+                Both ->
+                    "Use a MIX of active and passive voice sentences."
+
+        polarityInstr =
+            case style.polarity of
+                OnlyFirst ->
+                    "Write ALL sentences as affirmative sentences."
+
+                OnlySecond ->
+                    "Write ALL sentences as negative sentences."
+
+                Both ->
+                    "Include a MIX of affirmative and negative sentences."
+
+        clauseInstr =
+            case style.clauseType of
+                OnlyFirst ->
+                    "Write ALL sentences as declarative statements."
+
+                OnlySecond ->
+                    "Write ALL sentences as questions."
+
+                Both ->
+                    "Include a MIX of declarative statements and questions."
+    in
+    "\n\nSENTENCE STYLE REQUIREMENTS:\n" ++ voiceInstr ++ "\n" ++ polarityInstr ++ "\n" ++ clauseInstr
+
+
+buildGenerateSystemPrompt : String -> List VerbTense -> SentenceStyleOptions -> String
+buildGenerateSystemPrompt topic tenses style =
     let
         tenseLabels =
             List.map verbTenseLabel tenses |> String.join ", "
@@ -81,6 +120,7 @@ buildGenerateSystemPrompt topic tenses =
         ++ tenseEnums
         ++ "\n\nThe \"explanation\" field should be a brief English explanation (1 sentence) of why that tense applies.\n\nThe \"translation\" field should contain a correct English translation of the sentence.\n\n"
         ++ promptFieldInstruction
+        ++ buildStyleInstructions style
         ++ "\nRespond with a JSON object containing a \"sentences\" array. The array MUST have at most 10 items."
 
 
@@ -440,14 +480,14 @@ analyzeNarrative { apiKey, narrative, model, onResult } =
         }
 
 
-generateStory : { apiKey : String, language : String, topic : String, tenses : List VerbTense, model : String, onResult : Result ApiError (List ExerciseItem) -> msg } -> Cmd msg
-generateStory { apiKey, language, topic, tenses, model, onResult } =
+generateStory : { apiKey : String, language : String, topic : String, tenses : List VerbTense, sentenceStyle : SentenceStyleOptions, model : String, onResult : Result ApiError (List ExerciseItem) -> msg } -> Cmd msg
+generateStory { apiKey, language, topic, tenses, sentenceStyle, model, onResult } =
     let
         languageName =
             languageNameFromCode language
 
         systemPrompt =
-            buildGenerateSystemPrompt topic tenses
+            buildGenerateSystemPrompt topic tenses sentenceStyle
     in
     Http.request
         { method = "POST"

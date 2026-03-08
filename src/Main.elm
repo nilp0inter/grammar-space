@@ -7,7 +7,7 @@ import Array
 import Browser
 import Browser.Dom
 import Browser.Events
-import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExerciseKind(..), ExercisePhase(..), ExerciseState, ExerciseTypeChoice(..), StoryTopic(..), TranslationEvaluation(..), allItemsAnswered, clearSelectedTense, currentItem, getSelectedTense, goToItem, initTenseIdExercise, initTranslationExercise, isItemAnswered, isLastItem, recordTenseAnswer, recordTranslationEvaluation, selectTense, setTranslationEvaluating, storyTopics, updateTranslationInput)
+import Exercise.Types exposing (ExerciseInputMode(..), ExerciseItem, ExerciseKind(..), ExercisePhase(..), ExerciseState, ExerciseTypeChoice(..), Pick(..), SentenceFeature(..), SentenceStyleOptions, StoryTopic(..), TranslationEvaluation(..), allItemsAnswered, clearSelectedTense, currentItem, defaultSentenceStyle, getSelectedTense, goToItem, initTenseIdExercise, initTranslationExercise, isItemAnswered, isLastItem, recordTenseAnswer, recordTranslationEvaluation, selectTense, setTranslationEvaluating, storyTopics, updateTranslationInput)
 import Exercise.View exposing (viewExercise)
 import Grammar.Engine exposing (nullArgs)
 import Grammar.Lexicon as Lexicon
@@ -143,6 +143,7 @@ type alias Model =
     , selectedTopic : StoryTopic
     , customTopicInput : String
     , selectedTenses : List VerbTense
+    , sentenceStyle : SentenceStyleOptions
     }
 
 
@@ -201,6 +202,7 @@ type Msg
     | ToggleStoryTense VerbTense
     | ToggleTenseColumn Tense
     | ToggleTenseRow Aspect
+    | SetSentenceStyle SentenceFeature Pick
     | KeyPressed String
     | NoOp
 
@@ -334,6 +336,7 @@ init flagsValue =
             , selectedTopic = PredefinedTopic "daily-routine"
             , customTopicInput = ""
             , selectedTenses = allVerbTenses
+            , sentenceStyle = defaultSentenceStyle
             }
     in
     ( recompute model
@@ -946,6 +949,7 @@ update msg model =
                                 , language = model.selectedLanguage
                                 , topic = topicLabel
                                 , tenses = model.selectedTenses
+                                , sentenceStyle = model.sentenceStyle
                                 , model = model.selectedModelId
                                 , onResult = GenerateResult
                                 }
@@ -1145,6 +1149,24 @@ update msg model =
                             rowTenses
             in
             ( { model | selectedTenses = newTenses }, Cmd.none )
+
+        SetSentenceStyle feature choice ->
+            let
+                s =
+                    model.sentenceStyle
+
+                newStyle =
+                    case feature of
+                        VoiceFeature ->
+                            { s | voice = choice }
+
+                        PolarityFeature ->
+                            { s | polarity = choice }
+
+                        ClauseTypeFeature ->
+                            { s | clauseType = choice }
+            in
+            ( { model | sentenceStyle = newStyle }, Cmd.none )
 
         KeyPressed key ->
             case ( model.appMode, model.exerciseState ) of
@@ -1553,6 +1575,8 @@ viewExerciseTab model =
         , onToggleStoryTense = ToggleStoryTense
         , onToggleTenseColumn = ToggleTenseColumn
         , onToggleTenseRow = ToggleTenseRow
+        , sentenceStyle = model.sentenceStyle
+        , onSetSentenceStyle = SetSentenceStyle
         }
 
 
