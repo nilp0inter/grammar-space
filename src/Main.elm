@@ -1019,6 +1019,14 @@ update msg model =
                             if String.isEmpty (String.trim userInput) then
                                 ( model, Cmd.none )
 
+                            else if String.toLower (String.trim userInput) == String.toLower (String.trim item.translation) then
+                                ( { model
+                                    | exerciseState = Just (recordTranslationEvaluation (Perfect "Exact match!") state)
+                                    , feedbackTimeline = model.feedbackTimeline |> Animator.go (Animator.millis 300) FeedbackShown
+                                  }
+                                , Cmd.none
+                                )
+
                             else
                                 ( { model | exerciseState = Just (setTranslationEvaluating True state) }
                                 , Api.evaluateTranslation

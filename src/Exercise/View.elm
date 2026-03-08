@@ -687,12 +687,12 @@ viewTranslationSentenceCard item progress showTranslation =
 
 onEnter : msg -> Html.Attribute msg
 onEnter msg =
-    Events.on "keydown"
+    Events.stopPropagationOn "keydown"
         (Decode.field "key" Decode.string
             |> Decode.andThen
                 (\key ->
                     if key == "Enter" then
-                        Decode.succeed msg
+                        Decode.succeed ( msg, True )
 
                     else
                         Decode.fail "not enter"
